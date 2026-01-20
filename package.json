@@ -1,0 +1,24 @@
+{
+  "name": "tampermonkey-scripts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier -w .",
+    "format:check": "prettier -c .",
+    "smoke:nico-commons": "node smoke/nico-commons-content-tree.smoke.cjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "prettier": "^3.8.0",
+    "vitest": "^4.0.17"
+  }
+}
