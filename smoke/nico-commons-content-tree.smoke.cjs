@@ -1,8 +1,7 @@
 "use strict";
 
-const core = require("../lib/nico-commons-content-tree-core.cjs");
-
 async function main() {
+  const core = await import("../src/nico-commons-content-tree/core.js");
   const rootId = process.argv[2];
   if (!rootId) {
     console.error("Usage: npm run smoke:nico-commons -- <rootId>");

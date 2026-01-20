@@ -1,43 +1,45 @@
-"use strict";
+export const TITLE_KEYWORDS_DEFAULT = ["歌って", "歌わせていただき", "歌いました"];
+export const DEFAULT_LIMIT = 50;
 
-const TITLE_KEYWORDS_DEFAULT = ["歌って", "歌わせていただき", "歌いました"];
-const DEFAULT_LIMIT = 50;
-
-function sleep(ms) {
+export function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function looksLikeUtaMita(title, titleKeywords = TITLE_KEYWORDS_DEFAULT) {
+export function looksLikeUtaMita(title, titleKeywords = TITLE_KEYWORDS_DEFAULT) {
   return titleKeywords.some((k) => String(title ?? "").includes(k));
 }
 
-function normalizeTitle(title) {
+export function normalizeTitle(title) {
   return String(title ?? "").trim();
 }
 
-function isVideoSm(globalId) {
+export function isVideoSm(globalId) {
   return typeof globalId === "string" && /^sm\d+$/.test(globalId);
 }
 
-function buildChildrenApiUrl(rootId, { offset = 0, limit = DEFAULT_LIMIT } = {}) {
+export function buildChildrenApiUrl(rootId, { offset = 0, limit = DEFAULT_LIMIT } = {}) {
   return (
     `https://public-api.commons.nicovideo.jp/v1/tree/${encodeURIComponent(rootId)}/relatives/children` +
     `?_offset=${offset}&_limit=${limit}&with_meta=1&_sort=-id&only_mine=0`
   );
 }
 
-function buildAccountUsersApiUrl(userIds) {
+export function buildAccountUsersApiUrl(userIds) {
   const qs = userIds.map((id) => `userIds=${encodeURIComponent(id)}`).join("&");
   return `https://account.nicovideo.jp/api/public/v1/users.json?${qs}`;
 }
 
-async function fetchJson(fetchImpl, url) {
+export async function fetchJson(fetchImpl, url) {
   const res = await fetchImpl(url, { credentials: "omit" });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
   return await res.json();
 }
 
-async function fetchAllChildren(fetchImpl, rootId, { limit = DEFAULT_LIMIT, delayMs = 80 } = {}) {
+export async function fetchAllChildren(
+  fetchImpl,
+  rootId,
+  { limit = DEFAULT_LIMIT, delayMs = 80 } = {}
+) {
   let offset = 0;
   let total = Infinity;
   const all = [];
@@ -60,7 +62,7 @@ async function fetchAllChildren(fetchImpl, rootId, { limit = DEFAULT_LIMIT, dela
   return all;
 }
 
-function parseAccountUsersResponse(json) {
+export function parseAccountUsersResponse(json) {
   const users = json?.data?.users ?? json?.users ?? json?.data ?? [];
   const map = new Map();
   if (!Array.isArray(users)) return map;
@@ -73,7 +75,7 @@ function parseAccountUsersResponse(json) {
   return map;
 }
 
-async function fetchUserMap(fetchImpl, userIds, { chunkSize = 80, delayMs = 60 } = {}) {
+export async function fetchUserMap(fetchImpl, userIds, { chunkSize = 80, delayMs = 60 } = {}) {
   const uniq = Array.from(new Set(userIds.map(Number).filter((x) => Number.isFinite(x))));
   const map = new Map();
 
@@ -89,7 +91,7 @@ async function fetchUserMap(fetchImpl, userIds, { chunkSize = 80, delayMs = 60 }
   return map;
 }
 
-function extractCandidates(children, { titleKeywords = TITLE_KEYWORDS_DEFAULT } = {}) {
+export function extractCandidates(children, { titleKeywords = TITLE_KEYWORDS_DEFAULT } = {}) {
   return children
     .map((c) => {
       const title = normalizeTitle(c?.title ?? "");
@@ -107,27 +109,10 @@ function extractCandidates(children, { titleKeywords = TITLE_KEYWORDS_DEFAULT } 
     .filter(Boolean);
 }
 
-function buildTsv(candidates, userMap) {
+export function buildTsv(candidates, userMap) {
   const lines = candidates.map((x) => {
     const owner = userMap.get(x.userId) ?? String(x.userId ?? "");
     return [x.title, owner, x.url].join("\t");
   });
   return lines.join("\n");
 }
-
-module.exports = {
-  TITLE_KEYWORDS_DEFAULT,
-  DEFAULT_LIMIT,
-  sleep,
-  looksLikeUtaMita,
-  normalizeTitle,
-  isVideoSm,
-  buildChildrenApiUrl,
-  buildAccountUsersApiUrl,
-  fetchJson,
-  fetchAllChildren,
-  parseAccountUsersResponse,
-  fetchUserMap,
-  extractCandidates,
-  buildTsv,
-};

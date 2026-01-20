@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,8 +6,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const require = createRequire(import.meta.url);
-const core = require("../lib/nico-commons-content-tree-core.cjs");
+const core = await import("../src/nico-commons-content-tree/core.js");
 
 const childrenSample = JSON.parse(
   fs.readFileSync(path.join(__dirname, "fixtures", "nico-commons-children.sample.json"), "utf8")

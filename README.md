@@ -4,9 +4,9 @@ Personal Tampermonkey userscripts.
 
 ## Scripts
 
-| Script                              | Match                                                 | Install                                                               |
-| ----------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- |
-| Nico Commons ContentTree - Copy TSV | `https://commons.nicovideo.jp/works/*/tree/children*` | `scripts/nico-commons-content-tree/nico-commons-content-tree.user.js` |
+| Script                              | Match                                                 | Install                                  |
+| ----------------------------------- | ----------------------------------------------------- | ---------------------------------------- |
+| Nico Commons ContentTree - Copy TSV | `https://commons.nicovideo.jp/works/*/tree/children*` | `dist/nico-commons-content-tree.user.js` |
 
 ## Dev
 
@@ -17,5 +17,6 @@ Requirements:
 Commands:
 
 - `npm test` (fixture based)
+- `npm run build` (generate dist/\*.user.js)
 - `npm run smoke:nico-commons -- <rootId>` (real API)
 - `npm run format`
