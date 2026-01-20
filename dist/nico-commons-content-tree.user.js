@@ -43,10 +43,13 @@
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
     return await res.json();
   }
-  async function fetchAllChildren(fetchImpl, rootId, { limit = DEFAULT_LIMIT, delayMs = 80 } = {}) {
+  async function fetchAllChildren(fetchImpl, rootId, { limit = DEFAULT_LIMIT, delayMs = 80, onProgress } = {}) {
     let offset = 0;
     let total = Infinity;
     const all = [];
+    if (typeof onProgress === "function") {
+      onProgress({ phase: "children", fetched: 0, total: null, offset: 0, lastBatchSize: 0 });
+    }
     while (offset < total) {
       const url = buildChildrenApiUrl(rootId, { offset, limit });
       const j = await fetchJson(fetchImpl, url);
@@ -55,6 +58,16 @@
       total = Number(children?.total ?? contents.length);
       all.push(...contents);
       offset += contents.length;
+      if (typeof onProgress === "function") {
+        const totalFinite = Number.isFinite(total) ? total : null;
+        onProgress({
+          phase: "children",
+          fetched: all.length,
+          total: totalFinite,
+          offset,
+          lastBatchSize: contents.length
+        });
+      }
       if (contents.length === 0) break;
       await sleep(delayMs);
     }
@@ -71,15 +84,21 @@
     }
     return map;
   }
-  async function fetchUserMap(fetchImpl, userIds, { chunkSize = 80, delayMs = 60 } = {}) {
+  async function fetchUserMap(fetchImpl, userIds, { chunkSize = 80, delayMs = 60, onProgress } = {}) {
     const uniq = Array.from(new Set(userIds.map(Number).filter((x) => Number.isFinite(x))));
     const map = /* @__PURE__ */ new Map();
+    const total = uniq.length;
+    if (typeof onProgress === "function") onProgress({ phase: "users", done: 0, total, chunkSize });
     for (let i = 0; i < uniq.length; i += chunkSize) {
       const chunk = uniq.slice(i, i + chunkSize);
       const url = buildAccountUsersApiUrl(chunk);
       const j = await fetchJson(fetchImpl, url);
       const partial = parseAccountUsersResponse(j);
       for (const [k, v] of partial.entries()) map.set(k, v);
+      if (typeof onProgress === "function") {
+        const done = Math.min(i + chunk.length, total);
+        onProgress({ phase: "users", done, total, chunkSize });
+      }
       await sleep(delayMs);
     }
     return map;
@@ -150,7 +169,9 @@
         wrap.style.marginLeft = "10px";
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.textContent = "(Copy TSV)";
+        btn.textContent = "Copy";
+        btn.title = "Copy TSV to clipboard";
+        btn.setAttribute("aria-label", "Copy TSV to clipboard");
         btn.dataset.ngtkanaCopytsv = "btn";
         btn.style.padding = "2px 8px";
         btn.style.borderRadius = "999px";
@@ -161,15 +182,30 @@
         btn.style.fontWeight = "700";
         const badge = document.createElement("span");
         badge.dataset.ngtkanaCopytsv = "badge";
-        badge.textContent = "\u6B4C\u307F\u305F\u5019\u88DC: ?";
+        badge.textContent = "Candidates: ?";
         badge.style.padding = "2px 8px";
         badge.style.borderRadius = "999px";
         badge.style.border = "1px solid rgba(0, 0, 0, 0.12)";
         badge.style.background = "rgba(0, 0, 0, 0.04)";
         badge.style.fontSize = "12px";
+        const status = document.createElement("span");
+        status.dataset.ngtkanaCopytsv = "status";
+        status.textContent = "";
+        status.style.padding = "2px 6px";
+        status.style.borderRadius = "999px";
+        status.style.border = "1px solid rgba(0, 0, 0, 0.08)";
+        status.style.background = "rgba(0, 0, 0, 0.02)";
+        status.style.fontSize = "12px";
+        status.style.color = "rgba(0, 0, 0, 0.7)";
+        status.style.display = "none";
         wrap.appendChild(btn);
         wrap.appendChild(badge);
-        return { wrap, btn, badge };
+        wrap.appendChild(status);
+        return { wrap, btn, badge, status };
+      }
+      function fmtProgress(current, total) {
+        if (!Number.isFinite(total)) return `${current}/?`;
+        return `${current}/${total}`;
       }
       async function run() {
         const rootId = pickRootId();
@@ -177,32 +213,56 @@
         if (document.querySelector('[data-ngtkana-copytsv="wrap"]')) return;
         const insertPoint = findInsertPoint();
         if (!insertPoint) return;
-        const { wrap, btn, badge } = makeUi();
+        const { wrap, btn, badge, status } = makeUi();
         insertPoint.appendChild(wrap);
         btn.addEventListener("click", async () => {
           btn.disabled = true;
-          btn.textContent = "(Loading...)";
-          badge.textContent = "\u6B4C\u307F\u305F\u5019\u88DC: \u2026";
+          btn.textContent = "Copying...";
+          badge.textContent = "Starting...";
+          status.style.display = "none";
+          status.textContent = "";
           try {
-            const children = await fetchAllChildren(fetch, rootId);
+            const children = await fetchAllChildren(fetch, rootId, {
+              onProgress: ({ phase, fetched, total }) => {
+                if (phase !== "children") return;
+                badge.textContent = `Children: ${fmtProgress(fetched, total)}`;
+              }
+            });
             const candidates = extractCandidates(children, { titleKeywords: TITLE_KEYWORDS });
-            badge.textContent = `\u6B4C\u307F\u305F\u5019\u88DC:${candidates.length}`;
+            badge.textContent = `Candidates: ${candidates.length}`;
             const userMap = await fetchUserMap(
               fetch,
-              candidates.map((x) => x.userId)
+              candidates.map((x) => x.userId),
+              {
+                onProgress: ({ phase, done, total }) => {
+                  if (phase !== "users") return;
+                  badge.textContent = `Users: ${fmtProgress(done, total)}`;
+                }
+              }
             );
             const tsv = buildTsv(candidates, userMap);
             await copyToClipboard(tsv);
-            btn.textContent = "(Copied!)";
+            badge.textContent = `Candidates: ${candidates.length}`;
+            btn.textContent = "Copied";
+            status.style.display = "inline-block";
+            status.textContent = `Copied ${candidates.length} lines`;
+            status.style.borderColor = "rgba(0, 128, 0, 0.25)";
+            status.style.background = "rgba(0, 128, 0, 0.06)";
+            status.style.color = "rgba(0, 100, 0, 0.9)";
             await sleep(700);
           } catch (e) {
             console.error(e);
-            btn.textContent = "(Error)";
-            badge.textContent = "\u6B4C\u307F\u305F\u5019\u88DC: ?";
-            alert(`Copy TSV \u5931\u6557: ${e?.message ?? e}`);
+            btn.textContent = "Error";
+            badge.textContent = "Candidates: ?";
+            status.style.display = "inline-block";
+            status.textContent = `Failed: ${e?.message ?? e}`;
+            status.style.borderColor = "rgba(200, 0, 0, 0.25)";
+            status.style.background = "rgba(200, 0, 0, 0.06)";
+            status.style.color = "rgba(160, 0, 0, 0.9)";
+            alert(`Copy TSV failed: ${e?.message ?? e}`);
           } finally {
             btn.disabled = false;
-            btn.textContent = "(Copy TSV)";
+            btn.textContent = "Copy";
           }
         });
       }

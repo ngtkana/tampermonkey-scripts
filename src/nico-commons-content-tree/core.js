@@ -38,11 +38,15 @@ export async function fetchJson(fetchImpl, url) {
 export async function fetchAllChildren(
   fetchImpl,
   rootId,
-  { limit = DEFAULT_LIMIT, delayMs = 80 } = {}
+  { limit = DEFAULT_LIMIT, delayMs = 80, onProgress } = {}
 ) {
   let offset = 0;
   let total = Infinity;
   const all = [];
+
+  if (typeof onProgress === "function") {
+    onProgress({ phase: "children", fetched: 0, total: null, offset: 0, lastBatchSize: 0 });
+  }
 
   while (offset < total) {
     const url = buildChildrenApiUrl(rootId, { offset, limit });
@@ -54,6 +58,17 @@ export async function fetchAllChildren(
 
     all.push(...contents);
     offset += contents.length;
+
+    if (typeof onProgress === "function") {
+      const totalFinite = Number.isFinite(total) ? total : null;
+      onProgress({
+        phase: "children",
+        fetched: all.length,
+        total: totalFinite,
+        offset,
+        lastBatchSize: contents.length,
+      });
+    }
 
     if (contents.length === 0) break;
     await sleep(delayMs);
@@ -75,9 +90,16 @@ export function parseAccountUsersResponse(json) {
   return map;
 }
 
-export async function fetchUserMap(fetchImpl, userIds, { chunkSize = 80, delayMs = 60 } = {}) {
+export async function fetchUserMap(
+  fetchImpl,
+  userIds,
+  { chunkSize = 80, delayMs = 60, onProgress } = {}
+) {
   const uniq = Array.from(new Set(userIds.map(Number).filter((x) => Number.isFinite(x))));
   const map = new Map();
+
+  const total = uniq.length;
+  if (typeof onProgress === "function") onProgress({ phase: "users", done: 0, total, chunkSize });
 
   for (let i = 0; i < uniq.length; i += chunkSize) {
     const chunk = uniq.slice(i, i + chunkSize);
@@ -85,6 +107,11 @@ export async function fetchUserMap(fetchImpl, userIds, { chunkSize = 80, delayMs
     const j = await fetchJson(fetchImpl, url);
     const partial = parseAccountUsersResponse(j);
     for (const [k, v] of partial.entries()) map.set(k, v);
+
+    if (typeof onProgress === "function") {
+      const done = Math.min(i + chunk.length, total);
+      onProgress({ phase: "users", done, total, chunkSize });
+    }
     await sleep(delayMs);
   }
 
