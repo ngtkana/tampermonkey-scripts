@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>SHEER -> GCal Options</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            margin: 16px;
+        }
+
+        code {
+            background: #f6f8fa;
+            padding: 0 4px;
+            border-radius: 4px;
+        }
+
+        .row {
+            margin: 12px 0;
+        }
+
+        button {
+            padding: 6px 10px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 140px;
+        }
+
+        .muted {
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>SHEER -> Google Calendar</h1>
+    <div class="row">
+        <div>Lesson duration: <code>45</code> minutes (fixed)</div>
+        <div class="muted">Calendar: primary</div>
+    </div>
+
+    <div class="row">
+        <button id="connect">Connect Google</button>
+        <button id="disconnect">Disconnect</button>
+        <span id="status" class="muted"></span>
+    </div>
+
+    <h2>State</h2>
+    <div class="row">
+        <button id="export">Export</button>
+        <button id="import">Import</button>
+        <button id="reset">Reset</button>
+    </div>
+    <div class="row">
+        <textarea id="state" placeholder="Export/Import JSON"></textarea>
+    </div>
+
+    <script type="module" src="options.js"></script>
+</body>
+
+</html>

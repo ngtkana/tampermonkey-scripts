@@ -27,6 +27,23 @@ function buildMetaBlock({ version, downloadURL, updateURL }) {
   return lines.join("\n");
 }
 
+function buildMetaBlockSheer({ version, downloadURL, updateURL }) {
+  const lines = [
+    "// ==UserScript==",
+    "// @name         SHEER reservlog -> Google Calendar (URL)",
+    "// @namespace    https://ngtkana.local/",
+    `// @version      ${version}`,
+    "// @description  Add buttons to SHEER reservlog and open Google Calendar TEMPLATE URLs (no OAuth)",
+    "// @match        https://reservations-sheer.jp/user/reservelog.php*",
+    "// @grant        none",
+    `// @downloadURL  ${downloadURL}`,
+    `// @updateURL    ${updateURL}`,
+    "// ==/UserScript==",
+    "",
+  ];
+  return lines.join("\n");
+}
+
 async function main() {
   const rootDir = path.join(__dirname, "..");
   const pkg = readJson(path.join(rootDir, "package.json"));
@@ -52,6 +69,25 @@ async function main() {
       js: banner,
     },
   });
+
+  {
+    const distName = "sheer-reservelog-to-gcal-url.user.js";
+    const downloadURL = `${rawBase}/dist/${distName}`;
+    const updateURL = downloadURL;
+    const banner = buildMetaBlockSheer({ version, downloadURL, updateURL });
+
+    await esbuild.build({
+      entryPoints: [path.join(rootDir, "src", "sheer-reservelog-to-gcal-url", "index.js")],
+      bundle: true,
+      format: "iife",
+      platform: "browser",
+      target: ["chrome109", "firefox109"],
+      outfile: path.join(rootDir, "dist", distName),
+      banner: {
+        js: banner,
+      },
+    });
+  }
 }
 
 main().catch((e) => {

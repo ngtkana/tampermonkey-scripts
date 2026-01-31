@@ -1,0 +1,39 @@
+{
+    "manifest_version": 3,
+    "name": "SHEER reservations -> Google Calendar",
+    "description": "Sync reservations-sheer.jp reservlog entries to Google Calendar (create/delete incrementally).",
+    "version": "0.1.0",
+    "action": {
+        "default_title": "SHEER -> GCal"
+    },
+    "options_page": "options.html",
+    "permissions": [
+        "identity",
+        "storage"
+    ],
+    "host_permissions": [
+        "https://www.googleapis.com/*",
+        "https://reservations-sheer.jp/*"
+    ],
+    "background": {
+        "service_worker": "service_worker.js",
+        "type": "module"
+    },
+    "oauth2": {
+        "client_id": "313781986437-68tr6i8ts1s84gi59890dalvqpp5odc0.apps.googleusercontent.com",
+        "scopes": [
+            "https://www.googleapis.com/auth/calendar.events"
+        ]
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://reservations-sheer.jp/user/reservelog.php*"
+            ],
+            "js": [
+                "content_script.js"
+            ],
+            "run_at": "document_end"
+        }
+    ]
+}
