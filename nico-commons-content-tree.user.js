@@ -253,10 +253,10 @@
   function fmtStatusLine(s) {
     if (!s) return "";
     if (s.phase === "children") {
-      return `Children: ${fmtProgress(s.fetched, s.total)} (+${s.lastBatchSize})`;
+      return `子作品取得中: ${fmtProgress(s.fetched, s.total)} 件 (+${s.lastBatchSize})`;
     }
     if (s.phase === "users") {
-      return `Users: ${fmtProgress(s.done, s.total)}`;
+      return `投稿者取得中: ${fmtProgress(s.done, s.total)} 件`;
     }
     return "";
   }
@@ -335,10 +335,9 @@
       gap: "8px",
       flexWrap: "wrap",
     });
-    headerRow.insertBefore(rightWrap, commonsLink);
-    rightWrap.appendChild(commonsLink);
+    commonsLink.insertAdjacentElement("afterend", rightWrap);
 
-    const toggleBtn = makeButton("Children TSV");
+    const toggleBtn = makeButton("▶ カバーTSV");
     Object.assign(toggleBtn.style, {
       borderRadius: "999px",
       padding: "6px 10px",
@@ -414,16 +413,11 @@
       flexWrap: "wrap",
     });
 
-    const copyBtn = makeButton("Copy TSV");
-    const downloadBtn = makeButton("Download TSV");
-    const closeBtn = makeButton("折りたたむ");
-    Object.assign(closeBtn.style, {
-      marginLeft: "auto",
-    });
+    const copyBtn = makeButton("コピー");
+    const downloadBtn = makeButton("ダウンロード");
 
     row.appendChild(copyBtn);
     row.appendChild(downloadBtn);
-    row.appendChild(closeBtn);
 
     wrap.appendChild(status);
     wrap.appendChild(progressOuter);
@@ -442,6 +436,7 @@
 
     const setOpen = (open) => {
       wrap.style.display = open ? "flex" : "none";
+      toggleBtn.textContent = open ? "▲ カバーTSV" : "▶ カバーTSV";
       try {
         localStorage.setItem(STORAGE_KEY_UI_OPEN, open ? "1" : "0");
       } catch {
@@ -456,9 +451,6 @@
       const next = wrap.style.display === "none";
       setOpen(next);
     });
-    closeBtn.addEventListener("click", () => {
-      setOpen(false);
-    });
 
     return {
       mode: "embedded",
@@ -468,7 +460,6 @@
       progressInner,
       copyBtn,
       downloadBtn,
-      closeBtn,
       setOpen,
     };
   }
@@ -524,9 +515,9 @@
     });
 
     ui.status.textContent =
-      `Children done: ${children.length}\n` +
-      `Candidates: ${candidates.length}`;
-    if (ui.miniStatus) ui.miniStatus.textContent = `Candidates: ${candidates.length}`;
+      `子作品: ${children.length} 件\n` +
+      `候補: ${candidates.length} 件`;
+    if (ui.miniStatus) ui.miniStatus.textContent = `候補: ${candidates.length} 件`;
 
     updateProgressBar(ui, {
       phase: "children",
@@ -565,8 +556,8 @@
 
     setUiBusy(ui, true);
     ui.progressInner.style.width = "0%";
-    ui.status.textContent = `Starting: ${rootId}`;
-    if (ui.miniStatus) ui.miniStatus.textContent = "Starting...";
+    ui.status.textContent = `取得開始: ${rootId}`;
+    if (ui.miniStatus) ui.miniStatus.textContent = "取得中...";
 
     try {
       const result = await buildTsvForRootId(rootId, ui);
@@ -574,24 +565,23 @@
       if (kind === "copy") {
         await copyToClipboard(result.tsv);
         ui.status.textContent =
-          `Copied: ${result.candidatesCount} lines\n` +
-          `children=${result.childrenCount}, users=${result.userCount}`;
-        if (ui.miniStatus) ui.miniStatus.textContent = `Copied: ${result.candidatesCount}`;
+          `コピー完了: ${result.candidatesCount} 件\n` +
+          `子作品: ${result.childrenCount} 件、投稿者: ${result.userCount} 件`;
+        if (ui.miniStatus) ui.miniStatus.textContent = `コピー完了: ${result.candidatesCount} 件`;
       } else if (kind === "download") {
         downloadText(result.filename, result.tsv);
         ui.status.textContent =
-          `Downloaded: ${result.filename}\n` +
-          `children=${result.childrenCount}, users=${result.userCount}, candidates=${result.candidatesCount}`;
-        if (ui.miniStatus) ui.miniStatus.textContent = `Downloaded: ${result.filename}`;
+          `ダウンロード完了: ${result.filename}\n` +
+          `子作品: ${result.childrenCount} 件、投稿者: ${result.userCount} 件、候補: ${result.candidatesCount} 件`;
+        if (ui.miniStatus) ui.miniStatus.textContent = `ダウンロード完了`;
       }
 
       ui.progressInner.style.width = "100%";
     } catch (e) {
       console.error(e);
-      ui.status.textContent = `Failed: ${e?.message ?? e}`;
-      if (ui.miniStatus) ui.miniStatus.textContent = "Failed";
+      ui.status.textContent = `エラー: ${e?.message ?? e}`;
+      if (ui.miniStatus) ui.miniStatus.textContent = "エラー";
       ui.progressInner.style.width = "0%";
-      alert(`Children TSV failed: ${e?.message ?? e}`);
     } finally {
       setUiBusy(ui, false);
     }
@@ -608,8 +598,8 @@
 
     const ui = makeEmbeddedUi(mount);
     ui.wrap.dataset.ngtkanaChildrenTsv = "wrap";
-    ui.status.textContent = `Ready: ${rootId}`;
-    if (ui.miniStatus) ui.miniStatus.textContent = `Ready: ${rootId}`;
+    ui.status.textContent = `準備完了: ${rootId}`;
+    if (ui.miniStatus) ui.miniStatus.textContent = "";
 
     ui.copyBtn.addEventListener("click", () => {
       runAction("copy", ui);
