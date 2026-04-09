@@ -22,7 +22,7 @@
 
   const NEGATIVE_KEYWORDS = [
     // 非カバー動画
-    "まとめ", "音源", "講座", "配布", "メドレー", "予告",
+    "まとめ", "音源", "講座", "配布", "メドレー", "予告", "人力",
     // 合成音声系ソフトウェア・規格
     "utau", "vocaloid", "ボカロ", "neutrino", "synthesizerv",
     "voiceroid", "ボイスロイド", "a.i.voice", "合成音声", "nnsvs",
@@ -53,9 +53,6 @@
     return POSITIVE_KEYWORDS.some((k) => sl.includes(k.toLowerCase()));
   }
 
-  function isVideoSm(globalId) {
-    return typeof globalId === "string" && /^sm\d+$/.test(globalId);
-  }
 
   function buildChildrenApiUrl(rootId, { offset = 0, limit = DEFAULT_CHILDREN_LIMIT } = {}) {
     return `https://public-api.commons.nicovideo.jp/v1/tree/${encodeURIComponent(rootId)}/relatives/children?_offset=${offset}&_limit=${limit}&with_meta=1&_sort=-id&only_mine=0`;
@@ -205,9 +202,7 @@
         const title = normalizeTitle(c?.title ?? "");
         const userId = Number(c?.userId);
         const url = c?.watchURL ?? "";
-        const id = c?.globalId ?? "";
-
-        if (!isVideoSm(id)) return null;
+        if (c?.contentKind !== "video") return null;
         if (!title) return null;
         if (!looksLikeUtaMita(title)) return null;
         if (!url) return null;
