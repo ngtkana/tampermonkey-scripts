@@ -12,10 +12,20 @@
 
   const STORAGE_KEY_UI_OPEN = "ngtkana.children_tsv.ui_open";
 
-  const TITLE_KEYWORDS = [
-    "歌って",
-    "歌わせていただき",
-    "歌いました",
+  const POSITIVE_KEYWORDS = [
+    "歌って", "うたって", "唄って",
+    "歌った", "うたった", "唄った",
+    "歌いました", "うたいました", "唄いました",
+    "歌わせていただき", "うたわせていただき",
+    "カバー", "cover",
+  ];
+
+  const NEGATIVE_KEYWORDS = [
+    // 非カバー動画
+    "まとめ", "音源", "講座", "配布", "メドレー", "予告",
+    // 合成音声系ソフトウェア・規格
+    "utau", "vocaloid", "ボカロ", "neutrino", "synthesizerv",
+    "voiceroid", "ボイスロイド", "a.i.voice", "合成音声", "nnsvs",
   ];
 
   const DEFAULT_CHILDREN_LIMIT = 100;
@@ -36,9 +46,11 @@
     return String(title ?? "").trim();
   }
 
-  function looksLikeUtaMita(title, titleKeywords = TITLE_KEYWORDS) {
+  function looksLikeUtaMita(title) {
     const s = String(title ?? "");
-    return titleKeywords.some((k) => s.includes(k));
+    const sl = s.toLowerCase();
+    if (NEGATIVE_KEYWORDS.some((k) => sl.includes(k.toLowerCase()))) return false;
+    return POSITIVE_KEYWORDS.some((k) => sl.includes(k.toLowerCase()));
   }
 
   function isVideoSm(globalId) {
@@ -187,7 +199,7 @@
     return map;
   }
 
-  function extractCandidates(children, { titleKeywords = TITLE_KEYWORDS } = {}) {
+  function extractCandidates(children) {
     return children
       .map((c) => {
         const title = normalizeTitle(c?.title ?? "");
@@ -197,7 +209,7 @@
 
         if (!isVideoSm(id)) return null;
         if (!title) return null;
-        if (!looksLikeUtaMita(title, titleKeywords)) return null;
+        if (!looksLikeUtaMita(title)) return null;
         if (!url) return null;
 
         return { title, userId, url };
@@ -510,9 +522,7 @@
       onProgress: setPhase,
     });
 
-    const candidates = extractCandidates(children, {
-      titleKeywords: TITLE_KEYWORDS,
-    });
+    const candidates = extractCandidates(children);
 
     ui.status.textContent =
       `子作品: ${children.length} 件\n` +
