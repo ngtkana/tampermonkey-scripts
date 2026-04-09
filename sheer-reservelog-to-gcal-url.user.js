@@ -5,8 +5,8 @@
 // @description  Add buttons to SHEER reservlog and open Google Calendar TEMPLATE URLs (no OAuth)
 // @match        https://reservations-sheer.jp/user/reservelog.php*
 // @grant        none
-// @downloadURL  https://raw.githubusercontent.com/ngtkana/tampermonkey-scripts/main/dist/sheer-reservelog-to-gcal-url.user.js
-// @updateURL    https://raw.githubusercontent.com/ngtkana/tampermonkey-scripts/main/dist/sheer-reservelog-to-gcal-url.user.js
+// @downloadURL  https://raw.githubusercontent.com/ngtkana/tampermonkey-scripts/main/sheer-reservelog-to-gcal-url.user.js
+// @updateURL    https://raw.githubusercontent.com/ngtkana/tampermonkey-scripts/main/sheer-reservelog-to-gcal-url.user.js
 // ==/UserScript==
 
 (() => {

@@ -5,6 +5,8 @@
 // @description  On nicovideo watch pages, fetch all child contents from the Commons tree API, filter likely utaite covers, then copy/download TSV.
 // @match        https://www.nicovideo.jp/watch/*
 // @grant        none
+// @downloadURL  https://raw.githubusercontent.com/ngtkana/tampermonkey-scripts/main/nico-commons-content-tree.user.js
+// @updateURL    https://raw.githubusercontent.com/ngtkana/tampermonkey-scripts/main/nico-commons-content-tree.user.js
 // ==/UserScript==
 
 (() => {
