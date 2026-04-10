@@ -19,6 +19,8 @@
     "歌った", "うたった", "唄った",
     "歌いました", "うたいました", "唄いました",
     "歌わせていただき", "うたわせていただき",
+    "歌いますた", "歌いなおし",
+    "弾き語り",
     "カバー", "cover",
   ];
 
@@ -26,8 +28,8 @@
     // 非カバー動画
     "まとめ", "音源", "講座", "配布", "メドレー", "予告", "人力",
     // 合成音声系ソフトウェア・規格
-    "utau", "vocaloid", "ボカロ", "neutrino", "synthesizerv",
-    "voiceroid", "ボイスロイド", "a.i.voice", "合成音声", "nnsvs",
+    "utau", "vocaloid", "ボカロ", "neutrino", "synthesizerv", "synthv",
+    "voiceroid", "ボイスロイド", "a.i.voice", "合成音声", "nnsvs", "voicevox",
   ];
 
   const DEFAULT_CHILDREN_LIMIT = 100;
