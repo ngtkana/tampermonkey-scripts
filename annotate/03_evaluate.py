@@ -19,6 +19,7 @@ POSITIVE_KEYWORDS = [
     "歌いますた", "歌いなおし",
     "弾き語り",
     "カバー", "cover",
+    "歌えている", "原キーで",
 ]
 
 NEGATIVE_KEYWORDS = [
