@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 Step 3: dataset.json を使って現在のキーワードリストの
-        Precision / Recall / F1 を計算し、改善候補キーワードを提案する。
+        Precision / Recall / F1 を計算し、report.md に結果を出力する。
 """
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 DATASET = Path(__file__).parent / "dataset.json"
+REPORT  = Path(__file__).parent / "report.md"
 
 POSITIVE_KEYWORDS = [
     "歌って", "うたって", "唄って",
@@ -45,7 +47,6 @@ def f1(tp, fp, fn):
 def main():
     dataset = json.loads(DATASET.read_text(encoding="utf-8"))
 
-    # 評価
     tp = fp = fn = tn = 0
     false_neg = []
     false_pos = []
@@ -67,35 +68,82 @@ def main():
 
     p, r, f = f1(tp, fp, fn)
     total = tp + fp + fn + tn
-    print(f"=== 現在のキーワードリスト評価 ===")
-    print(f"  サンプル数 : {total}  (陽性={tp+fn}, 陰性={tn+fp})")
-    print(f"  TP={tp}  FP={fp}  FN={fn}  TN={tn}")
-    print(f"  Precision : {p:.3f}")
-    print(f"  Recall    : {r:.3f}")
-    print(f"  F1        : {f:.3f}")
 
-    print(f"\n=== FN ({fn}件) サンプル ===")
-    for title in false_neg[:20]:
-        print(f"  {title}")
+    # stdout
+    print(f"Precision={p:.3f}  Recall={r:.3f}  F1={f:.3f}  "
+          f"(TP={tp} FP={fp} FN={fn} TN={tn})")
+    print(f"→ {REPORT}")
 
-    print(f"\n=== FP ({fp}件) サンプル ===")
-    for title in false_pos[:20]:
-        print(f"  {title}")
+    # report.md
+    lines = [
+        f"# キーワードリスト評価レポート",
+        f"",
+        f"生成日時: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"",
+        f"## スコア",
+        f"",
+        f"| 指標 | 値 |",
+        f"|------|----|",
+        f"| サンプル数 | {total} (陽性={tp+fn}, 陰性={tn+fp}) |",
+        f"| TP | {tp} |",
+        f"| FP | {fp} |",
+        f"| FN | {fn} |",
+        f"| TN | {tn} |",
+        f"| Precision | {p:.3f} |",
+        f"| Recall    | {r:.3f} |",
+        f"| **F1**    | **{f:.3f}** |",
+        f"",
+        f"## キーワードリスト",
+        f"",
+        f"**POSITIVE** ({len(POSITIVE_KEYWORDS)}件)",
+        f"",
+        "```",
+        "\n".join(POSITIVE_KEYWORDS),
+        "```",
+        f"",
+        f"**NEGATIVE** ({len(NEGATIVE_KEYWORDS)}件)",
+        f"",
+        "```",
+        "\n".join(NEGATIVE_KEYWORDS),
+        "```",
+        f"",
+        f"## False Negative ({fn}件) — 取りこぼし",
+        f"",
+    ]
+    for t in false_neg:
+        lines.append(f"- {t}")
 
-    print("\n=== FN タイトル中の候補キーワード出現数 ===")
-    for kw in ["歌コレ", "歌枠", "歌ってみました", "cover", "covered", "sing", "sang",
-               "vocal", "弾き語り", "合唱", "生歌", "歌練習", "練習", "歌う"]:
+    lines += [
+        f"",
+        f"## False Positive ({fp}件) — 誤検出",
+        f"",
+    ]
+    for t in false_pos:
+        lines.append(f"- {t}")
+
+    lines += [
+        f"",
+        f"## FN タイトル中の POSITIVE 候補キーワード",
+        f"",
+    ]
+    for kw in ["歌コレ", "歌枠", "歌ってみました", "cover", "covered",
+               "vocal", "弾き語り", "合唱", "生歌", "歌練習", "歌う"]:
         cnt = sum(1 for t in false_neg if kw.lower() in t.lower())
         if cnt:
-            print(f"  {kw!r:20s}: {cnt}")
+            lines.append(f"- `{kw}`: {cnt}件")
 
-    print("\n=== FP タイトル中の NEGATIVE 候補キーワード出現数 ===")
+    lines += [
+        f"",
+        f"## FP タイトル中の NEGATIVE 候補キーワード",
+        f"",
+    ]
     for kw in ["remix", "リミックス", "mmd", "踊ってみた", "叩いてみた", "弾いてみた",
-               "ランキング", "マッシュアップ", "解説", "実況", "synthv", "voicevox",
-               "手描き", "人力", "組曲", "メドレー", "ゲーム"]:
+               "ランキング", "マッシュアップ", "cevio", "voisona", "巡回", "手描き"]:
         cnt = sum(1 for t in false_pos if kw.lower() in t.lower())
         if cnt:
-            print(f"  {kw!r:20s}: {cnt}")
+            lines.append(f"- `{kw}`: {cnt}件")
+
+    REPORT.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
