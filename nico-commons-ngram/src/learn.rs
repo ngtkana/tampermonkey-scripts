@@ -1,5 +1,6 @@
 use crate::model::{HyperParams, Metrics, Model};
 use crate::ngram;
+use crate::classifier;
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
@@ -444,6 +445,95 @@ pub fn cross_validate(k: usize) -> Result<(), Box<dyn std::error::Error>> {
         "[INFO] average: f1={:.3}, acc={:.3}, prec={:.3}, rec={:.3}",
         avg_f1, avg_acc, avg_prec, avg_rec
     );
+    eprintln!();
+
+    Ok(())
+}
+
+/// ルールベース vs ニューラルモデルの性能比較
+pub fn compare() -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!("[INFO] comparing rule-based vs neural model...");
+
+    // データセット読み込み
+    let samples = load_dataset(DATASET_PATH)?;
+    let mut processed: Vec<(String, f64)> = samples
+        .into_iter()
+        .map(|s| {
+            let label = match s.label {
+                0 | 1 => s.label as f64,
+                _ => 0.0,
+            };
+            (normalize(&s.title), label)
+        })
+        .collect();
+
+    // シャッフルと分割
+    processed.shuffle(&mut rand::thread_rng());
+    let split_idx = (processed.len() as f64 * 0.8) as usize;
+    let (_train_data, test_data) = processed.split_at(split_idx);
+    let test_data = test_data.to_vec();
+
+    eprintln!("[INFO] evaluating on {} test samples\n", test_data.len());
+
+    // === Rule-Based Classifier ===
+    eprintln!("=== Rule-Based Classifier (keyword matching) ===");
+    let mut rule_preds = Vec::new();
+    for (title, label) in &test_data {
+        let pred = classifier::classify(title) as i32 as f64;
+        rule_preds.push((pred, *label));
+    }
+    let rule_metrics = Metrics::compute(&rule_preds);
+
+    eprintln!(
+        "Precision: {:.3}  Recall: {:.3}  F1: {:.3}  Accuracy: {:.3}\n",
+        rule_metrics.precision, rule_metrics.recall, rule_metrics.f1, rule_metrics.accuracy
+    );
+
+    // === Neural Model ===
+    eprintln!("=== Neural Model (n-gram LR) ===");
+    let model = load_model(MODEL_OUTPUT)?;
+    let mut nn_preds = Vec::new();
+    for (title, label) in &test_data {
+        let features = vectorize(title, &model.vocab, &model.idf, model.n_min, model.n_max);
+        let prob = model.predict_prob(&features);
+        nn_preds.push((prob, *label));
+    }
+    let nn_metrics = Metrics::compute(&nn_preds);
+
+    eprintln!(
+        "Precision: {:.3}  Recall: {:.3}  F1: {:.3}  Accuracy: {:.3}\n",
+        nn_metrics.precision, nn_metrics.recall, nn_metrics.f1, nn_metrics.accuracy
+    );
+
+    // === 比較表 ===
+    eprintln!("=== Comparison ===");
+    eprintln!("{:<20} {:<12} {:<12} {:<12}", "Method", "Precision", "Recall", "F1");
+    eprintln!("{}", "-".repeat(60));
+    eprintln!(
+        "{:<20} {:<12.3} {:<12.3} {:<12.3}",
+        "Rule-Based", rule_metrics.precision, rule_metrics.recall, rule_metrics.f1
+    );
+    eprintln!(
+        "{:<20} {:<12.3} {:<12.3} {:<12.3}",
+        "Neural Model", nn_metrics.precision, nn_metrics.recall, nn_metrics.f1
+    );
+    eprintln!();
+
+    // 改善度
+    let f1_improvement = ((nn_metrics.f1 - rule_metrics.f1) / rule_metrics.f1 * 100.0).abs();
+    let acc_improvement = ((nn_metrics.accuracy - rule_metrics.accuracy) / rule_metrics.accuracy * 100.0).abs();
+
+    if nn_metrics.f1 > rule_metrics.f1 {
+        eprintln!(
+            "[INFO] Neural model is +{:.1}% better in F1 (+{:.1}% in accuracy)",
+            f1_improvement, acc_improvement
+        );
+    } else {
+        eprintln!(
+            "[INFO] Rule-based is +{:.1}% better in F1",
+            f1_improvement
+        );
+    }
     eprintln!();
 
     Ok(())

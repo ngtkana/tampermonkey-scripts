@@ -1,6 +1,7 @@
 mod learn;
 mod model;
 mod ngram;
+mod classifier;
 
 use clap::{Parser, Subcommand};
 
@@ -37,6 +38,8 @@ enum Commands {
         #[arg(short, long, default_value = "annotate/model.js")]
         output: String,
     },
+    /// Compare rule-based vs neural model
+    Compare,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -47,6 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Tune => learn::tune()?,
         Commands::CrossVal { k } => learn::cross_validate(*k)?,
         Commands::Export { threshold, output } => learn::export(*threshold, output)?,
+        Commands::Compare => learn::compare()?,
     }
     Ok(())
 }
