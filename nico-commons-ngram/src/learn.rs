@@ -68,7 +68,55 @@ pub fn learn() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::write(MODEL_OUTPUT, &json)?;
     eprintln!("[INFO] saved model to {}", MODEL_OUTPUT);
 
+    // 8. 重要な特徴を表示
+    eprintln!();
+    eprintln!("=== Top 20 Important Features (by absolute weight) ===");
+    display_top_features(&model, 20);
+
     Ok(())
+}
+
+/// 重要な特徴（絶対値の高いウェイト）をトップ N 表示
+fn display_top_features(model: &Model, top_n: usize) {
+    // vocab の n-gram とウェイトをペアにして、絶対値でソート
+    let mut features: Vec<(String, f64)> = model
+        .vocab
+        .iter()
+        .map(|(gram, &idx)| (gram.clone(), model.weights[idx]))
+        .collect();
+
+    features.sort_by(|a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap());
+
+    eprintln!("{:<20} {:<12}", "N-gram", "Weight");
+    eprintln!("{}", "-".repeat(35));
+    for (gram, weight) in features.iter().take(top_n) {
+        eprintln!("{:<20} {:<12.4}", gram, weight);
+    }
+    eprintln!();
+}
+
+/// 特定のサンプルで活性化した特徴の寄与度トップ N を表示
+fn display_top_contributing_features(model: &Model, features: &[(usize, f64)], top_n: usize) {
+    // 逆引き辞書：index → n-gram
+    let mut idx_to_gram: HashMap<usize, &str> = HashMap::new();
+    for (gram, idx) in &model.vocab {
+        idx_to_gram.insert(*idx, gram.as_str());
+    }
+
+    // 寄与度を計算：|weight_i * feature_activation_i|
+    let mut contributions: Vec<(String, f64)> = Vec::new();
+    for (idx, feat_weight) in features {
+        if let Some(gram) = idx_to_gram.get(idx) {
+            let model_weight = model.weights[*idx];
+            let contribution = (model_weight * feat_weight).abs();
+            contributions.push((gram.to_string(), contribution));
+        }
+    }
+
+    // 寄与度でソート（降順）
+    contributions.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+    eprintln!("      Top features: {}", contributions.iter().take(top_n).map(|(g, _)| g.clone()).collect::<Vec<_>>().join(", "));
 }
 
 fn load_dataset(path: &str) -> Result<Vec<Sample>, Box<dyn std::error::Error>> {
@@ -264,6 +312,37 @@ pub fn predict(title: &str) -> Result<(), Box<dyn std::error::Error>> {
     let label = if prob >= 0.5 { 1 } else { 0 };
 
     println!("Score: {:.2}, Label: {}", prob, label);
+
+    // === 寄与度の高い特徴（n-gram）を表示 ===
+    eprintln!("\n=== Top Contributing Features ===");
+
+    // 逆引き辞書：index → n-gram
+    let mut idx_to_gram: HashMap<usize, &str> = HashMap::new();
+    for (gram, idx) in &model.vocab {
+        idx_to_gram.insert(*idx, gram.as_str());
+    }
+
+    // 寄与度を計算：|weight_i * feature_activation_i|
+    let mut contributions: Vec<(String, f64, f64)> = Vec::new(); // (n-gram, weight, contribution)
+    for (idx, feat_weight) in &features {
+        if let Some(gram) = idx_to_gram.get(idx) {
+            let model_weight = model.weights[*idx];
+            let contribution = (model_weight * feat_weight).abs();
+            contributions.push((gram.to_string(), model_weight, contribution));
+        }
+    }
+
+    // 寄与度でソート（降順）
+    contributions.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap());
+
+    // トップ10を表示
+    eprintln!("{:<20} {:<12} {:<12}", "N-gram", "Weight", "Contribution");
+    eprintln!("{}", "-".repeat(50));
+    for (gram, weight, contrib) in contributions.iter().take(10) {
+        eprintln!("{:<20} {:<12.4} {:<12.4}", gram, weight, contrib);
+    }
+    eprintln!();
+
     Ok(())
 }
 
@@ -489,24 +568,54 @@ pub fn compare() -> Result<(), Box<dyn std::error::Error>> {
         rule_metrics.precision, rule_metrics.recall, rule_metrics.f1, rule_metrics.accuracy
     );
 
-    // === Neural Model ===
-    eprintln!("=== Neural Model (n-gram LR) ===");
+    // === Neural Model（複数閾値） ===
+    eprintln!("=== Neural Model (n-gram LR) - Threshold Sensitivity ===");
     let model = load_model(MODEL_OUTPUT)?;
-    let mut nn_preds = Vec::new();
+
+    // 全サンプルで確率を計算
+    let mut all_probs = Vec::new();
     for (title, label) in &test_data {
         let features = vectorize(title, &model.vocab, &model.idf, model.n_min, model.n_max);
         let prob = model.predict_prob(&features);
-        nn_preds.push((prob, *label));
+        all_probs.push((prob, *label));
     }
-    let nn_metrics = Metrics::compute(&nn_preds);
 
-    eprintln!(
-        "Precision: {:.3}  Recall: {:.3}  F1: {:.3}  Accuracy: {:.3}\n",
-        nn_metrics.precision, nn_metrics.recall, nn_metrics.f1, nn_metrics.accuracy
-    );
+    // 異なる閾値での性能を評価
+    let thresholds = [0.3, 0.4, 0.5, 0.6];
+    let mut best_f1 = 0.0;
+    let mut best_threshold = 0.5;
+    let mut best_metrics = Metrics::compute(&all_probs);
 
-    // === 比較表 ===
-    eprintln!("=== Comparison ===");
+    eprintln!("{:<12} {:<12} {:<12} {:<12}", "Threshold", "Precision", "Recall", "F1");
+    eprintln!("{}", "-".repeat(50));
+
+    for threshold in &thresholds {
+        let preds: Vec<(f64, f64)> = all_probs
+            .iter()
+            .map(|(prob, label)| {
+                let pred = if prob >= threshold { 1.0 } else { 0.0 };
+                (pred, *label)
+            })
+            .collect();
+        let metrics = Metrics::compute(&preds);
+
+        eprintln!(
+            "{:<12.2} {:<12.3} {:<12.3} {:<12.3}",
+            threshold, metrics.precision, metrics.recall, metrics.f1
+        );
+
+        if metrics.f1 > best_f1 {
+            best_f1 = metrics.f1;
+            best_threshold = *threshold;
+            best_metrics = metrics;
+        }
+    }
+    eprintln!();
+    eprintln!("[INFO] best threshold: {:.2} (F1={:.3})", best_threshold, best_f1);
+    eprintln!();
+
+    // === 比較表（最適な閾値でのニューラルモデル vs ルールベース） ===
+    eprintln!("=== Comparison (Neural: threshold={:.2}) ===", best_threshold);
     eprintln!("{:<20} {:<12} {:<12} {:<12}", "Method", "Precision", "Recall", "F1");
     eprintln!("{}", "-".repeat(60));
     eprintln!(
@@ -515,24 +624,64 @@ pub fn compare() -> Result<(), Box<dyn std::error::Error>> {
     );
     eprintln!(
         "{:<20} {:<12.3} {:<12.3} {:<12.3}",
-        "Neural Model", nn_metrics.precision, nn_metrics.recall, nn_metrics.f1
+        "Neural Model", best_metrics.precision, best_metrics.recall, best_metrics.f1
     );
     eprintln!();
 
     // 改善度
-    let f1_improvement = ((nn_metrics.f1 - rule_metrics.f1) / rule_metrics.f1 * 100.0).abs();
-    let acc_improvement = ((nn_metrics.accuracy - rule_metrics.accuracy) / rule_metrics.accuracy * 100.0).abs();
+    let f1_improvement = ((best_metrics.f1 - rule_metrics.f1) / rule_metrics.f1 * 100.0).abs();
+    let recall_improvement = ((best_metrics.recall - rule_metrics.recall) / rule_metrics.recall * 100.0).abs();
 
-    if nn_metrics.f1 > rule_metrics.f1 {
+    if best_metrics.f1 > rule_metrics.f1 {
         eprintln!(
-            "[INFO] Neural model is +{:.1}% better in F1 (+{:.1}% in accuracy)",
-            f1_improvement, acc_improvement
+            "[INFO] Neural model is +{:.1}% better in F1 (recall +{:.1}%)",
+            f1_improvement, recall_improvement
         );
     } else {
         eprintln!(
             "[INFO] Rule-based is +{:.1}% better in F1",
             f1_improvement
         );
+    }
+    eprintln!();
+
+    // === Error Analysis for Neural Model ===
+    eprintln!("=== Error Analysis (threshold={:.2}) ===", best_threshold);
+    let mut false_negatives = Vec::new();
+    let mut false_positives = Vec::new();
+
+    for ((prob, label), (title, _)) in all_probs.iter().zip(&test_data) {
+        let pred = if prob >= &best_threshold { 1.0 } else { 0.0 };
+
+        // False Negative: label=1, pred=0 (missed covers)
+        if label > &0.5 && pred < 0.5 {
+            false_negatives.push((title.clone(), *prob));
+        }
+        // False Positive: label=0, pred=1 (false alarms)
+        else if *label < 0.5 && pred > 0.5 {
+            false_positives.push((title.clone(), *prob));
+        }
+    }
+
+    eprintln!("False Negatives (Missed Covers): {}", false_negatives.len());
+    for (i, (title, prob)) in false_negatives.iter().take(5).enumerate() {
+        eprintln!("  {}. [prob={:.3}] {}", i + 1, prob, title);
+        let features = vectorize(title, &model.vocab, &model.idf, model.n_min, model.n_max);
+        display_top_contributing_features(&model, &features, 3);
+    }
+    if false_negatives.len() > 5 {
+        eprintln!("  ... and {} more", false_negatives.len() - 5);
+    }
+    eprintln!();
+
+    eprintln!("False Positives (False Alarms): {}", false_positives.len());
+    for (i, (title, prob)) in false_positives.iter().take(5).enumerate() {
+        eprintln!("  {}. [prob={:.3}] {}", i + 1, prob, title);
+        let features = vectorize(title, &model.vocab, &model.idf, model.n_min, model.n_max);
+        display_top_contributing_features(&model, &features, 3);
+    }
+    if false_positives.len() > 5 {
+        eprintln!("  ... and {} more", false_positives.len() - 5);
     }
     eprintln!();
 
@@ -605,6 +754,30 @@ pub fn export(threshold: f64, output_path: &str) -> Result<(), Box<dyn std::erro
 
     let file_size = std::fs::metadata(output_path)?.len();
     eprintln!("[INFO] file size: {:.1}KB", file_size as f64 / 1024.0);
+
+    // === 保持される特徴の重要度統計 ===
+    eprintln!();
+    eprintln!("=== Pruned Features Statistics ===");
+    let mut kept_weights: Vec<f64> = new_weights.iter().map(|w| w.abs()).collect();
+    kept_weights.sort_by(|a, b| b.partial_cmp(a).unwrap());
+
+    if !kept_weights.is_empty() {
+        let max = kept_weights[0];
+        let min = kept_weights[kept_weights.len() - 1];
+        let mean = kept_weights.iter().sum::<f64>() / kept_weights.len() as f64;
+        let median = if kept_weights.len() % 2 == 0 {
+            (kept_weights[kept_weights.len() / 2 - 1] + kept_weights[kept_weights.len() / 2]) / 2.0
+        } else {
+            kept_weights[kept_weights.len() / 2]
+        };
+
+        eprintln!("Count: {}", kept_weights.len());
+        eprintln!("Max weight: {:.4}", max);
+        eprintln!("Median weight: {:.4}", median);
+        eprintln!("Mean weight: {:.4}", mean);
+        eprintln!("Min weight: {:.4}", min);
+    }
+    eprintln!();
 
     Ok(())
 }

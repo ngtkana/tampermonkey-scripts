@@ -132,6 +132,12 @@ impl Model {
         sigmoid(score)
     }
 
+    /// 閾値を指定して分類（確率ベース）
+    #[allow(dead_code)]
+    pub fn classify_with_threshold(&self, features: &[(usize, f64)], threshold: f64) -> bool {
+        self.predict_prob(features) >= threshold
+    }
+
     /// SGD で 1 サンプル分のパラメータを更新
     pub fn update(&mut self, features: &[(usize, f64)], label: f64, params: &HyperParams) {
         let prob = self.predict_prob(features);
