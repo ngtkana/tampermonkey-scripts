@@ -20,6 +20,14 @@ enum Commands {
         /// Title to classify
         title: String,
     },
+    /// Grid search for hyperparameters
+    Tune,
+    /// Cross-validate with k-fold
+    CrossVal {
+        /// Number of folds (default: 5)
+        #[arg(short, long, default_value = "5")]
+        k: usize,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -27,6 +35,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match &cli.command {
         Commands::Learn => learn::learn()?,
         Commands::Predict { title } => learn::predict(title)?,
+        Commands::Tune => learn::tune()?,
+        Commands::CrossVal { k } => learn::cross_validate(*k)?,
     }
     Ok(())
 }

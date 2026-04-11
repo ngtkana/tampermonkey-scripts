@@ -1,5 +1,5 @@
 use crate::ngram;
-use crate::model::{HyperParams, Model};
+use crate::model::{HyperParams, Model, Metrics};
 use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
 use rand::seq::SliceRandom;
@@ -24,7 +24,6 @@ pub fn learn() -> Result<(), Box<dyn std::error::Error>> {
     let mut processed: Vec<(String, f64)> = samples
         .into_iter()
         .map(|s| {
-            // label を 0 または 1 に検証
             let label = match s.label {
                 0 | 1 => s.label as f64,
                 other => {
@@ -52,11 +51,18 @@ pub fn learn() -> Result<(), Box<dyn std::error::Error>> {
     let vocab = build_vocab(&train_data, params.n_min, params.n_max);
     eprintln!("[INFO] vocab size: {}", vocab.len());
 
-    // 5. 訓練
-    let mut model = Model::new(vocab, params.n_min, params.n_max);
+    // 5. IDF 構築（TF-IDF を使う場合）
+    let idf = if params.use_tfidf {
+        build_idf(&train_data, &vocab, params.n_min, params.n_max)
+    } else {
+        vec![]
+    };
+
+    // 6. 訓練
+    let mut model = Model::new(vocab, params.n_min, params.n_max, idf);
     train(&mut model, &train_data, &test_data, &params);
 
-    // 6. モデル保存
+    // 7. モデル保存
     let json = serde_json::to_string_pretty(&model)?;
     std::fs::write(MODEL_OUTPUT, &json)?;
     eprintln!("[INFO] saved model to {}", MODEL_OUTPUT);
@@ -90,11 +96,63 @@ fn build_vocab(
     vocab
 }
 
-/// テキストを語彙に基づきインデックス列に変換（バイナリ特徴量）
-fn vectorize(text: &str, vocab: &HashMap<String, usize>, n_min: usize, n_max: usize) -> Vec<usize> {
-    ngram::extract(text, n_min, n_max)
+/// IDF スコアを計算（BM25 スムージング付き）
+fn build_idf(
+    samples: &[(String, f64)],
+    vocab: &HashMap<String, usize>,
+    n_min: usize,
+    n_max: usize,
+) -> Vec<f64> {
+    let n = samples.len() as f64;
+    let mut df = vec![0usize; vocab.len()];
+
+    for (text, _) in samples {
+        let grams = ngram::extract(text, n_min, n_max);
+        for gram in grams {
+            if let Some(&i) = vocab.get(&gram) {
+                df[i] = df[i].saturating_add(1);
+            }
+        }
+    }
+
+    df.iter()
+        .map(|&d| (n / (d as f64 + 1.0)).ln() + 1.0)
+        .collect()
+}
+
+/// テキストを語彙に基づきインデックス列に変換（重み付き特徴量）
+fn vectorize(
+    text: &str,
+    vocab: &HashMap<String, usize>,
+    idf: &[f64],
+    n_min: usize,
+    n_max: usize,
+) -> Vec<(usize, f64)> {
+    let grams = ngram::extract(text, n_min, n_max);
+    let total = grams.len() as f64;
+
+    if total == 0.0 {
+        return vec![];
+    }
+
+    let mut counts: HashMap<usize, usize> = HashMap::new();
+    for gram in grams {
+        if let Some(&i) = vocab.get(&gram) {
+            *counts.entry(i).or_insert(0) += 1;
+        }
+    }
+
+    counts
         .into_iter()
-        .filter_map(|g| vocab.get(&g).copied())
+        .map(|(i, count)| {
+            let tf = count as f64 / total;
+            let w = if idf.is_empty() {
+                1.0  // binary: weight = 1.0
+            } else {
+                tf * idf[i]  // TF-IDF: weight = TF * IDF
+            };
+            (i, w)
+        })
         .collect()
 }
 
@@ -106,11 +164,14 @@ fn train(
     params: &HyperParams,
 ) {
     eprintln!();
-    eprintln!("{:<6} {:<12} {:<12} {:<12} {:<12}", "epoch", "train_loss", "train_acc", "test_loss", "test_acc");
+    eprintln!(
+        "{:<6} {:<10} {:<10} {:<10} {:<10}",
+        "epoch", "train_f1", "train_acc", "test_f1", "test_acc"
+    );
     eprintln!("{}", "-".repeat(60));
 
     let mut rng = rand::thread_rng();
-    let mut best_test_loss = f64::INFINITY;
+    let mut best_test_f1 = 0.0_f64;
     let mut patience = 0;
 
     for epoch in 0..params.epochs {
@@ -119,23 +180,23 @@ fn train(
         shuffled.shuffle(&mut rng);
 
         // 訓練
-        let (train_loss, train_acc) = evaluate_and_train(model, &shuffled, params);
+        let train_metrics = evaluate_and_train(model, &shuffled, params);
 
         // テスト
-        let (test_loss, test_acc) = evaluate(model, test_data);
+        let test_metrics = evaluate(model, test_data, params);
 
         eprintln!(
-            "{:<6} {:<12.4} {:<12.3} {:<12.4} {:<12.3}",
+            "{:<6} {:<10.3} {:<10.3} {:<10.3} {:<10.3}",
             epoch + 1,
-            train_loss,
-            train_acc,
-            test_loss,
-            test_acc
+            train_metrics.f1,
+            train_metrics.accuracy,
+            test_metrics.f1,
+            test_metrics.accuracy
         );
 
-        // 早期停止：test_loss が改善したかチェック
-        if test_loss < best_test_loss {
-            best_test_loss = test_loss;
+        // 早期停止：test_f1 が改善したかチェック
+        if test_metrics.f1 > best_test_f1 {
+            best_test_f1 = test_metrics.f1;
             patience = 0;
         } else {
             patience += 1;
@@ -149,55 +210,37 @@ fn train(
     eprintln!();
 }
 
-/// 訓練：サンプルを処理して loss/acc を計算、同時にパラメータ更新
+/// 訓練：サンプルを処理して Metrics を計算、同時にパラメータ更新
 fn evaluate_and_train(
     model: &mut Model,
     data: &[(String, f64)],
     params: &HyperParams,
-) -> (f64, f64) {
-    let mut loss = 0.0;
-    let mut correct = 0usize;
+) -> Metrics {
+    let mut preds = Vec::new();
 
     for (text, label) in data {
-        let features = vectorize(text, &model.vocab, model.n_min, model.n_max);
+        let features = vectorize(text, &model.vocab, &model.idf, model.n_min, model.n_max);
         let prob = model.predict_prob(&features);
-
-        // BCE loss
-        loss += bce(prob, *label);
-
-        // 精度
-        let pred_label = if prob >= 0.5 { 1.0_f64 } else { 0.0_f64 };
-        if (pred_label - label).abs() < 0.5 {
-            correct += 1;
-        }
+        preds.push((prob, *label));
 
         // SGD 更新
         model.update(&features, *label, params);
     }
 
-    let n = data.len() as f64;
-    (loss / n, correct as f64 / n)
+    Metrics::compute(&preds)
 }
 
-/// テスト：loss/acc を計算（パラメータ更新なし）
-fn evaluate(model: &Model, data: &[(String, f64)]) -> (f64, f64) {
-    let mut loss = 0.0;
-    let mut correct = 0usize;
+/// テスト：Metrics を計算（パラメータ更新なし）
+fn evaluate(model: &Model, data: &[(String, f64)], _params: &HyperParams) -> Metrics {
+    let mut preds = Vec::new();
 
     for (text, label) in data {
-        let features = vectorize(text, &model.vocab, model.n_min, model.n_max);
+        let features = vectorize(text, &model.vocab, &model.idf, model.n_min, model.n_max);
         let prob = model.predict_prob(&features);
-
-        loss += bce(prob, *label);
-
-        let pred_label = if prob >= 0.5 { 1.0_f64 } else { 0.0_f64 };
-        if (pred_label - label).abs() < 0.5 {
-            correct += 1;
-        }
+        preds.push((prob, *label));
     }
 
-    let n = data.len() as f64;
-    (loss / n, correct as f64 / n)
+    Metrics::compute(&preds)
 }
 
 /// 学習済みモデルを使って推論
@@ -209,7 +252,7 @@ pub fn predict(title: &str) -> Result<(), Box<dyn std::error::Error>> {
     let normalized = normalize(title);
 
     // ベクトル化（モデルの n_min/n_max を使用）
-    let features = vectorize(&normalized, &model.vocab, model.n_min, model.n_max);
+    let features = vectorize(&normalized, &model.vocab, &model.idf, model.n_min, model.n_max);
 
     if features.is_empty() {
         eprintln!("[WARN] title contains no known n-grams");
@@ -230,9 +273,168 @@ fn load_model(path: &str) -> Result<Model, Box<dyn std::error::Error>> {
     Ok(serde_json::from_str(&text)?)
 }
 
-/// Binary Cross Entropy loss（数値安定化）
-/// prob を [1e-10, 1-1e-10] の範囲でクリップして log の未定義を防ぐ
-fn bce(prob: f64, label: f64) -> f64 {
-    let prob = prob.clamp(1e-10, 1.0 - 1e-10);
-    -label * prob.ln() - (1.0 - label) * (1.0 - prob).ln()
+/// グリッドサーチでハイパーパラメータを最適化
+pub fn tune() -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!("[INFO] starting hyperparameter grid search...");
+
+    // データセット読み込み
+    let samples = load_dataset(DATASET_PATH)?;
+    let mut processed: Vec<(String, f64)> = samples
+        .into_iter()
+        .map(|s| {
+            let label = match s.label {
+                0 | 1 => s.label as f64,
+                _ => 0.0,
+            };
+            (normalize(&s.title), label)
+        })
+        .collect();
+
+    // シャッフルと分割（全体で 1 回だけ）
+    processed.shuffle(&mut rand::thread_rng());
+    let split_idx = (processed.len() as f64 * 0.8) as usize;
+    let (train_data, test_data) = processed.split_at(split_idx);
+    let (train_data, test_data) = (train_data.to_vec(), test_data.to_vec());
+
+    // 語彙構築
+    let vocab = build_vocab(&train_data, 3, 5);
+
+    // グリッドサーチパラメータ
+    let lrs = [0.01, 0.05, 0.1, 0.5];
+    let lambdas = [1e-5, 1e-4, 1e-3, 1e-2];
+
+    eprintln!();
+    eprintln!(
+        "{:<10} {:<12} {:<10} {:<10}",
+        "learning_rate", "lambda", "test_f1", "test_acc"
+    );
+    eprintln!("{}", "-".repeat(50));
+
+    let mut best_f1 = 0.0;
+    let mut best_lr = 0.0;
+    let mut best_lambda = 0.0;
+
+    for &lr in &lrs {
+        for &lambda in &lambdas {
+            let mut params = HyperParams::default();
+            params.learning_rate = lr;
+            params.lambda = lambda;
+
+            let idf = vec![];  // バイナリモード
+            let mut model = Model::new(vocab.clone(), 3, 5, idf);
+            train_simple(&mut model, &train_data, &params);
+
+            let test_metrics = evaluate(&model, &test_data, &params);
+
+            eprintln!(
+                "{:<10.4} {:<12.0e} {:<10.3} {:<10.3}",
+                lr, lambda, test_metrics.f1, test_metrics.accuracy
+            );
+
+            if test_metrics.f1 > best_f1 {
+                best_f1 = test_metrics.f1;
+                best_lr = lr;
+                best_lambda = lambda;
+            }
+        }
+    }
+
+    eprintln!();
+    eprintln!("[INFO] best params: lr={}, lambda={}, test_f1={:.3}", best_lr, best_lambda, best_f1);
+    eprintln!();
+
+    Ok(())
+}
+
+/// 訓練ループ（ログなし）
+fn train_simple(model: &mut Model, train_data: &[(String, f64)], params: &HyperParams) {
+    let mut rng = rand::thread_rng();
+
+    for _ in 0..params.epochs {
+        let mut shuffled = train_data.to_vec();
+        shuffled.shuffle(&mut rng);
+
+        for (text, label) in &shuffled {
+            let features = vectorize(text, &model.vocab, &model.idf, model.n_min, model.n_max);
+            let prob = model.predict_prob(&features);
+            if (prob - label).abs() > 1e-6 {
+                model.update(&features, *label, params);
+            }
+        }
+    }
+}
+
+/// k-fold クロスバリデーション
+pub fn cross_validate(k: usize) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!("[INFO] starting {}-fold cross-validation...", k);
+
+    // データセット読み込み
+    let samples = load_dataset(DATASET_PATH)?;
+    let mut processed: Vec<(String, f64)> = samples
+        .into_iter()
+        .map(|s| {
+            let label = match s.label {
+                0 | 1 => s.label as f64,
+                _ => 0.0,
+            };
+            (normalize(&s.title), label)
+        })
+        .collect();
+
+    // シャッフル
+    processed.shuffle(&mut rand::thread_rng());
+    let fold_size = processed.len() / k;
+
+    let mut all_results = Vec::new();
+
+    eprintln!();
+    eprintln!("{:<6} {:<10} {:<10} {:<10} {:<10}", "fold", "test_f1", "test_acc", "test_prec", "test_rec");
+    eprintln!("{}", "-".repeat(50));
+
+    for fold in 0..k {
+        let test_start = fold * fold_size;
+        let test_end = if fold == k - 1 {
+            processed.len()
+        } else {
+            (fold + 1) * fold_size
+        };
+
+        let test_data = processed[test_start..test_end].to_vec();
+        let mut train_data = Vec::new();
+        train_data.extend_from_slice(&processed[0..test_start]);
+        train_data.extend_from_slice(&processed[test_end..]);
+
+        // 語彙構築
+        let vocab = build_vocab(&train_data, 3, 5);
+
+        // 訓練
+        let params = HyperParams::default();
+        let idf = vec![];
+        let mut model = Model::new(vocab, 3, 5, idf);
+        train_simple(&mut model, &train_data, &params);
+
+        // 評価
+        let metrics = evaluate(&model, &test_data, &params);
+        eprintln!(
+            "{:<6} {:<10.3} {:<10.3} {:<10.3} {:<10.3}",
+            fold + 1, metrics.f1, metrics.accuracy, metrics.precision, metrics.recall
+        );
+
+        all_results.push(metrics);
+    }
+
+    // 平均
+    let avg_f1 = all_results.iter().map(|m| m.f1).sum::<f64>() / k as f64;
+    let avg_acc = all_results.iter().map(|m| m.accuracy).sum::<f64>() / k as f64;
+    let avg_prec = all_results.iter().map(|m| m.precision).sum::<f64>() / k as f64;
+    let avg_rec = all_results.iter().map(|m| m.recall).sum::<f64>() / k as f64;
+
+    eprintln!();
+    eprintln!(
+        "[INFO] average: f1={:.3}, acc={:.3}, prec={:.3}, rec={:.3}",
+        avg_f1, avg_acc, avg_prec, avg_rec
+    );
+    eprintln!();
+
+    Ok(())
 }
