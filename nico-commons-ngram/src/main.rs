@@ -15,11 +15,18 @@ struct Cli {
 enum Commands {
     /// Learn
     Learn,
+    /// Predict
+    Predict {
+        /// Title to classify
+        title: String,
+    },
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match &cli.command {
-        Commands::Learn => learn::learn(),
+        Commands::Learn => learn::learn()?,
+        Commands::Predict { title } => learn::predict(title)?,
     }
+    Ok(())
 }

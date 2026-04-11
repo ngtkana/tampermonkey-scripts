@@ -5,8 +5,9 @@ pub struct HyperParams {
     pub n_min: usize,
     pub n_max: usize,
     pub learning_rate: f64,
-    pub lambda: f64,   // L2 正則化係数
+    pub lambda: f64,      // L2 正則化係数
     pub epochs: usize,
+    pub early_stop_patience: usize,  // 改善なしの許容エポック数
 }
 
 impl Default for HyperParams {
@@ -17,25 +18,30 @@ impl Default for HyperParams {
             learning_rate: 0.1,
             lambda: 1e-4,
             epochs: 50,
+            early_stop_patience: 10,
         }
     }
 }
 
-/// 学習済みモデル
+/// 学習済みモデル（推論に必要な情報をすべて含む）
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Model {
     pub vocab: HashMap<String, usize>,
     pub weights: Vec<f64>,
     pub bias: f64,
+    pub n_min: usize,
+    pub n_max: usize,
 }
 
 impl Model {
-    pub fn new(vocab: HashMap<String, usize>) -> Self {
+    pub fn new(vocab: HashMap<String, usize>, n_min: usize, n_max: usize) -> Self {
         let n = vocab.len();
         Self {
             weights: vec![0.0; n],
             bias: 0.0,
             vocab,
+            n_min,
+            n_max,
         }
     }
 
@@ -77,8 +83,10 @@ mod tests {
         let vocab = vec![("a".to_string(), 0), ("b".to_string(), 1)]
             .into_iter()
             .collect();
-        let m = Model::new(vocab);
+        let m = Model::new(vocab, 3, 5);
         assert_eq!(m.weights.len(), 2);
         assert_eq!(m.bias, 0.0);
+        assert_eq!(m.n_min, 3);
+        assert_eq!(m.n_max, 5);
     }
 }
