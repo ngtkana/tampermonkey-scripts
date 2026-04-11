@@ -37,21 +37,33 @@
 
   let MODEL = null; // グローバル MODEL（非同期で読み込み）
 
-  async function loadModel() {
+  function loadModel() {
     if (MODEL) return; // 既に読み込まれている
 
-    try {
-      // モデルを URL から fetch
-      const modelUrl = "https://raw.githubusercontent.com/ngtkana/tampermonkey-scripts/main/nico-commons-ngram/annotate/model.json";
-      const response = await fetch(modelUrl);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      MODEL = await response.json();
-      console.log("[ML] Model loaded successfully");
-    } catch (err) {
-      console.error("[ML] Failed to load model:", err.message);
-      // フォールバック：デフォルト model（dummy）を設定
-      MODEL = { bias: 0, n_min: 3, n_max: 5, vocab: {}, weights: [] };
-    }
+    // GM_xmlhttpRequest で model.js を fetch（プルーニング版）
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: "https://raw.githubusercontent.com/ngtkana/tampermonkey-scripts/main/nico-commons-ngram/annotate/model.js",
+      onload: (response) => {
+        try {
+          if (response.status === 200) {
+            // model.js は "const MODEL = {...};" という形式なので、eval で実行
+            eval(response.responseText);
+            console.log("[ML] Model loaded successfully");
+            console.log(`[ML Model] vocab size: ${Object.keys(MODEL.vocab).length}, weights length: ${MODEL.weights.length}`);
+          } else {
+            throw new Error(`HTTP ${response.status}`);
+          }
+        } catch (err) {
+          console.error("[ML] Failed to load model:", err.message);
+          MODEL = { bias: 0, n_min: 3, n_max: 5, vocab: {}, weights: [] };
+        }
+      },
+      onerror: (err) => {
+        console.error("[ML] Failed to fetch model:", err);
+        MODEL = { bias: 0, n_min: 3, n_max: 5, vocab: {}, weights: [] };
+      },
+    });
   }
 
   function extractNgrams(text, nMin, nMax) {
@@ -93,17 +105,18 @@
   }
 
   function classifyWithModel(title) {
-    // モデルの状態確認（初回のみ）
-    if (!window.__mlModelChecked) {
-      window.__mlModelChecked = true;
-      console.log(`[ML Model] vocab size: ${Object.keys(MODEL.vocab).length}, weights length: ${MODEL.weights.length}`);
+    // モデルが読み込まれていない場合はスキップ
+    if (!MODEL || !MODEL.vocab || Object.keys(MODEL.vocab).length === 0) {
+      return false; // デフォルトは「カバーではない」と判定
     }
 
     const features = vectorize(title, MODEL.vocab, MODEL.n_min, MODEL.n_max);
     const prob = predictWithModel(title, MODEL);
 
     // debug: console に出力（browser console で確認可能）
-    console.log(`[ML] title="${title.substring(0, 30)}" features=${features.length} prob=${prob.toFixed(4)}`);
+    if (prob >= 0.3) {
+      console.log(`[ML] title="${title.substring(0, 30)}" features=${features.length} prob=${prob.toFixed(4)}`);
+    }
 
     return prob >= 0.5; // 閾値 0.5
   }
@@ -688,8 +701,6 @@
     }
   }, 300);
 
-  // 起動時にモデルを読み込み
-  loadModel().catch((err) => {
-    console.error("[ML] Error during initialization:", err);
-  });
+  // 起動時にモデルを読み込み（非同期）
+  loadModel();
 })();
