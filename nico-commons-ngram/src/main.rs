@@ -1,4 +1,6 @@
 mod learn;
+mod ngram;
+mod model;
 
 use clap::{Parser, Subcommand};
 
