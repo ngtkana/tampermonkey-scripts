@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nico Watch - Children TSV
 // @namespace    https://ngtkana.local/
-// @version      2.0.0
+// @version      3.0.0
 // @description  On nicovideo watch pages, fetch all child contents from the Commons tree API, filter likely utaite covers, then copy/download TSV.
 // @match        https://www.nicovideo.jp/watch/*
 // @grant        none
@@ -13,25 +13,6 @@
   "use strict";
 
   const STORAGE_KEY_UI_OPEN = "ngtkana.children_tsv.ui_open";
-
-  const POSITIVE_KEYWORDS = [
-    "歌って", "うたって", "唄って",
-    "歌った", "うたった", "唄った",
-    "歌いました", "うたいました", "唄いました",
-    "歌わせていただき", "うたわせていただき",
-    "歌いますた", "歌いなおし",
-    "弾き語り",
-    "カバー", "cover",
-    "歌えている", "原キーで",
-  ];
-
-  const NEGATIVE_KEYWORDS = [
-    // 非カバー動画
-    "まとめ", "音源", "講座", "配布", "メドレー", "予告", "人力",
-    // 合成音声系ソフトウェア・規格
-    "utau", "vocaloid", "ボカロ", "neutrino", "synthesizerv", "synthv",
-    "voiceroid", "ボイスロイド", "a.i.voice", "合成音声", "nnsvs", "voicevox",
-  ];
 
   const DEFAULT_CHILDREN_LIMIT = 100;
   const DEFAULT_CHILDREN_DELAY_MS = 80;
@@ -48,14 +29,50 @@
   }
 
   function normalizeTitle(title) {
-    return String(title ?? "").trim();
+    // NFKC 正規化 + 小文字化（ML モデル用）
+    return String(title ?? "").normalize("NFKC").toLowerCase();
   }
 
-  function looksLikeUtaMita(title) {
-    const s = String(title ?? "");
-    const sl = s.toLowerCase();
-    if (NEGATIVE_KEYWORDS.some((k) => sl.includes(k.toLowerCase()))) return false;
-    return POSITIVE_KEYWORDS.some((k) => sl.includes(k.toLowerCase()));
+  // ============ ML Model Inference ============
+
+  function extractNgrams(text, nMin, nMax) {
+    const ngrams = new Set();
+    for (let n = nMin; n <= nMax; n++) {
+      for (let i = 0; i + n <= text.length; i++) {
+        ngrams.add(text.substring(i, i + n));
+      }
+    }
+    return ngrams;
+  }
+
+  function vectorize(text, vocab, nMin, nMax) {
+    const ngrams = extractNgrams(text, nMin, nMax);
+    const features = [];
+    for (const gram of ngrams) {
+      const idx = vocab[gram];
+      if (idx !== undefined) {
+        features.push([idx, 1.0]); // 1.0 = binary feature
+      }
+    }
+    return features;
+  }
+
+  function sigmoid(x) {
+    return 1.0 / (1.0 + Math.exp(-x));
+  }
+
+  function predictWithModel(title, model) {
+    const features = vectorize(title, model.vocab, model.n_min, model.n_max);
+    let score = model.bias;
+    for (const [idx, weight] of features) {
+      score += model.weights[idx] * weight;
+    }
+    return sigmoid(score);
+  }
+
+  function classifyWithModel(title) {
+    const prob = predictWithModel(title, MODEL);
+    return prob >= 0.5; // 閾値 0.5
   }
 
 
@@ -209,7 +226,7 @@
         const url = c?.watchURL ?? "";
         if (c?.contentKind !== "video") return null;
         if (!title) return null;
-        if (!looksLikeUtaMita(title)) return null;
+        if (!classifyWithModel(title)) return null;
         if (!url) return null;
 
         return { title, userId, url };
