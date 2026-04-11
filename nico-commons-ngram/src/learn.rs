@@ -1,8 +1,8 @@
+use crate::model::{HyperParams, Metrics, Model};
 use crate::ngram;
-use crate::model::{HyperParams, Model, Metrics};
+use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
-use rand::seq::SliceRandom;
 
 const DATASET_PATH: &str = "annotate/dataset.json";
 const MODEL_OUTPUT: &str = "annotate/model.json";
@@ -81,11 +81,7 @@ fn normalize(text: &str) -> String {
 }
 
 /// 訓練データから語彙（n-gram → index）を構築
-fn build_vocab(
-    samples: &[(String, f64)],
-    n_min: usize,
-    n_max: usize,
-) -> HashMap<String, usize> {
+fn build_vocab(samples: &[(String, f64)], n_min: usize, n_max: usize) -> HashMap<String, usize> {
     let mut vocab = HashMap::new();
     for (text, _) in samples {
         for gram in ngram::extract(text, n_min, n_max) {
@@ -147,9 +143,9 @@ fn vectorize(
         .map(|(i, count)| {
             let tf = count as f64 / total;
             let w = if idf.is_empty() {
-                1.0  // binary: weight = 1.0
+                1.0 // binary: weight = 1.0
             } else {
-                tf * idf[i]  // TF-IDF: weight = TF * IDF
+                tf * idf[i] // TF-IDF: weight = TF * IDF
             };
             (i, w)
         })
@@ -211,11 +207,7 @@ fn train(
 }
 
 /// 訓練：サンプルを処理して Metrics を計算、同時にパラメータ更新
-fn evaluate_and_train(
-    model: &mut Model,
-    data: &[(String, f64)],
-    params: &HyperParams,
-) -> Metrics {
+fn evaluate_and_train(model: &mut Model, data: &[(String, f64)], params: &HyperParams) -> Metrics {
     let mut preds = Vec::new();
 
     for (text, label) in data {
@@ -252,7 +244,13 @@ pub fn predict(title: &str) -> Result<(), Box<dyn std::error::Error>> {
     let normalized = normalize(title);
 
     // ベクトル化（モデルの n_min/n_max を使用）
-    let features = vectorize(&normalized, &model.vocab, &model.idf, model.n_min, model.n_max);
+    let features = vectorize(
+        &normalized,
+        &model.vocab,
+        &model.idf,
+        model.n_min,
+        model.n_max,
+    );
 
     if features.is_empty() {
         eprintln!("[WARN] title contains no known n-grams");
@@ -316,11 +314,13 @@ pub fn tune() -> Result<(), Box<dyn std::error::Error>> {
 
     for &lr in &lrs {
         for &lambda in &lambdas {
-            let mut params = HyperParams::default();
-            params.learning_rate = lr;
-            params.lambda = lambda;
+            let params = HyperParams {
+                learning_rate: lr,
+                lambda,
+                ..Default::default()
+            };
 
-            let idf = vec![];  // バイナリモード
+            let idf = vec![]; // バイナリモード
             let mut model = Model::new(vocab.clone(), 3, 5, idf);
             train_simple(&mut model, &train_data, &params);
 
@@ -340,7 +340,10 @@ pub fn tune() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     eprintln!();
-    eprintln!("[INFO] best params: lr={}, lambda={}, test_f1={:.3}", best_lr, best_lambda, best_f1);
+    eprintln!(
+        "[INFO] best params: lr={}, lambda={}, test_f1={:.3}",
+        best_lr, best_lambda, best_f1
+    );
     eprintln!();
 
     Ok(())
@@ -388,7 +391,10 @@ pub fn cross_validate(k: usize) -> Result<(), Box<dyn std::error::Error>> {
     let mut all_results = Vec::new();
 
     eprintln!();
-    eprintln!("{:<6} {:<10} {:<10} {:<10} {:<10}", "fold", "test_f1", "test_acc", "test_prec", "test_rec");
+    eprintln!(
+        "{:<6} {:<10} {:<10} {:<10} {:<10}",
+        "fold", "test_f1", "test_acc", "test_prec", "test_rec"
+    );
     eprintln!("{}", "-".repeat(50));
 
     for fold in 0..k {
@@ -417,7 +423,11 @@ pub fn cross_validate(k: usize) -> Result<(), Box<dyn std::error::Error>> {
         let metrics = evaluate(&model, &test_data, &params);
         eprintln!(
             "{:<6} {:<10.3} {:<10.3} {:<10.3} {:<10.3}",
-            fold + 1, metrics.f1, metrics.accuracy, metrics.precision, metrics.recall
+            fold + 1,
+            metrics.f1,
+            metrics.accuracy,
+            metrics.precision,
+            metrics.recall
         );
 
         all_results.push(metrics);

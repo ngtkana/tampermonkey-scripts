@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 /// パフォーマンス指標
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub struct Metrics {
     pub loss: f64,
     pub accuracy: f64,
@@ -78,10 +79,10 @@ pub struct HyperParams {
     pub n_min: usize,
     pub n_max: usize,
     pub learning_rate: f64,
-    pub lambda: f64,      // L2 正則化係数
+    pub lambda: f64, // 正則化係数
     pub epochs: usize,
-    pub early_stop_patience: usize,  // 改善なしの許容エポック数
-    pub use_tfidf: bool,  // TF-IDF を使うか
+    pub early_stop_patience: usize, // 改善なしの許容エポック数
+    pub use_tfidf: bool,            // TF-IDF を使うか
 }
 
 impl Default for HyperParams {
@@ -98,15 +99,6 @@ impl Default for HyperParams {
     }
 }
 
-impl HyperParams {
-    pub fn new(lr: f64, lambda: f64) -> Self {
-        let mut params = Self::default();
-        params.learning_rate = lr;
-        params.lambda = lambda;
-        params
-    }
-}
-
 /// 学習済みモデル（推論に必要な情報をすべて含む）
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Model {
@@ -115,7 +107,7 @@ pub struct Model {
     pub bias: f64,
     pub n_min: usize,
     pub n_max: usize,
-    pub idf: Vec<f64>,  // 空なら binary, 非空なら TF-IDF
+    pub idf: Vec<f64>, // 空なら binary, 非空なら TF-IDF
 }
 
 impl Model {
