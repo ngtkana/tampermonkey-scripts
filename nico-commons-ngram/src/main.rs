@@ -28,6 +28,15 @@ enum Commands {
         #[arg(short, long, default_value = "5")]
         k: usize,
     },
+    /// Export pruned model as JavaScript
+    Export {
+        /// Weight threshold for pruning
+        #[arg(short, long, default_value = "0.05")]
+        threshold: f64,
+        /// Output file path
+        #[arg(short, long, default_value = "annotate/model.js")]
+        output: String,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,6 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Predict { title } => learn::predict(title)?,
         Commands::Tune => learn::tune()?,
         Commands::CrossVal { k } => learn::cross_validate(*k)?,
+        Commands::Export { threshold, output } => learn::export(*threshold, output)?,
     }
     Ok(())
 }
