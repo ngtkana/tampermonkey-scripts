@@ -125,7 +125,7 @@
     try {
       const normalizedTitle = normalizeTitle(title);
       const prob = predictWithModel(normalizedTitle, MODEL);
-      dbg(0, `classify: "${title.substring(0, 40)}" → ${prob.toFixed(4)}`);
+      dbg(0, `classify: "${normalizedTitle.substring(0, 40)}" → ${prob.toFixed(4)}`);
       return prob >= 0.5; // 閾値 0.5
     } catch (e) {
       dbg(3, 'classifyWithModel error:', e.message);
