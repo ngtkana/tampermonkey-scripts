@@ -710,22 +710,20 @@ pub fn export(threshold: f64, output_path: &str) -> Result<(), Box<dyn std::erro
         orig_vocab_size
     );
 
-    // old_idx → new_idx のマッピング
-    let mut old_to_new = vec![-1i32; orig_vocab_size];
-    for (new_idx, &old_idx) in kept_indices.iter().enumerate() {
-        old_to_new[old_idx] = new_idx as i32;
+    // old_idx → gram のマッピングを構築（逆引き用）
+    let mut idx_to_gram = vec![String::new(); orig_vocab_size];
+    for (gram, &idx) in &model.vocab {
+        idx_to_gram[idx] = gram.clone();
     }
 
-    // 新しい vocab と weights を構築
+    // kept_indices の順序で new_vocab, new_weights を構築
+    // これで vocab インデックスが 0, 1, 2, ... になる
     let mut new_vocab = HashMap::new();
     let mut new_weights = Vec::new();
 
-    for (gram, &old_idx) in &model.vocab {
-        if old_to_new[old_idx] >= 0 {
-            let new_idx = old_to_new[old_idx] as usize;
-            new_vocab.insert(gram.clone(), new_idx);
-            new_weights.push(model.weights[old_idx]);
-        }
+    for (new_idx, &old_idx) in kept_indices.iter().enumerate() {
+        new_vocab.insert(idx_to_gram[old_idx].clone(), new_idx);
+        new_weights.push(model.weights[old_idx]);
     }
 
     // JSON 出力
