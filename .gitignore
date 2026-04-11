@@ -1,6 +1,6 @@
 node_modules/
 ranking.html
-annotate/child_counts.json
-annotate/children.json
+child_counts.json
+children.json
 target
 
