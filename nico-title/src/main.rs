@@ -3,6 +3,8 @@ mod analyze;
 mod extract;
 mod annotate;
 mod compare;
+mod bio;
+mod features;
 
 use clap::{Parser, Subcommand};
 
@@ -30,6 +32,16 @@ enum Commands {
     },
     /// Compare rule-based and LLM extractions
     Compare,
+    /// Convert annotations to BIO tags
+    #[command(name = "bio-convert")]
+    BioConvert {
+        /// Input JSONL file (default: data/nico_api_annotations.jsonl)
+        #[arg(short, long, default_value = "data/nico_api_annotations.jsonl")]
+        input: String,
+        /// Output file (default: data/nico_bio_tags.jsonl)
+        #[arg(short, long, default_value = "data/nico_bio_tags.jsonl")]
+        output: String,
+    },
 }
 
 fn main() {
@@ -41,6 +53,7 @@ fn main() {
         Some(Commands::Extract) => extract_all_titles(),
         Some(Commands::Annotate { count }) => annotate::annotate_titles(count),
         Some(Commands::Compare) => compare::compare_methods(),
+        Some(Commands::BioConvert { input, output }) => bio::convert_bio(&input, &output),
         None => println!("No command specified. Use --help for usage information."),
     }
 }
