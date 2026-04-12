@@ -19,6 +19,7 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Download => download::download(),
+        Some(Commands::Download) => download::download(),
+        None => println!("No command specified. Use --help for usage information."),
     }
 }
