@@ -223,3 +223,120 @@ pub fn analyze(input_file: &str, model_file: &str, output_file: &str) {
         println!("不一致ケースを data/analysis_mismatches.jsonl に出力しました");
     }
 }
+
+pub fn show_mismatches(input_file: &str, count: usize) {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    let file = match File::open(input_file) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open file: {}", e);
+            return;
+        }
+    };
+
+    let reader = BufReader::new(file);
+    let mut empty_crf = Vec::new();
+    let mut partial_crf = Vec::new();
+    let mut different = Vec::new();
+
+    // Parse JSON and categorize
+    for line in reader.lines().flatten() {
+        if let Ok(row) = serde_json::from_str::<serde_json::Value>(&line) {
+            let crf_extracted = row["crf_extracted"].as_str().unwrap_or("");
+            let llm_extracted = row["llm_extracted"].as_str().unwrap_or("");
+
+            if crf_extracted.is_empty() {
+                empty_crf.push(row);
+            } else if crf_extracted.len() < llm_extracted.len()
+                && llm_extracted.starts_with(crf_extracted)
+            {
+                partial_crf.push(row);
+            } else if crf_extracted != llm_extracted {
+                different.push(row);
+            }
+        }
+    }
+
+    println!("\n{}", "=".repeat(80));
+    println!("CRF モデル不一致分析");
+    println!("{}\n", "=".repeat(80));
+
+    // Pattern 1: CRF が空を予測
+    println!("✗ パターン1: CRF が空を予測 ({} 件)", empty_crf.len());
+    println!("{}", "-".repeat(80));
+    for row in empty_crf.iter().take(count) {
+        println!(
+            "Title: {}",
+            row["title"].as_str().unwrap_or("(N/A)")
+        );
+        println!(
+            "  LLM期待値: {}",
+            row["llm_extracted"].as_str().unwrap_or("(N/A)")
+        );
+        println!("  CRF予測:   （空）");
+        if let Some(pred) = row["pred_labels"].as_array() {
+            let pred_str: String = pred
+                .iter()
+                .take(20)
+                .filter_map(|v| v.as_str())
+                .collect();
+            println!("  ラベル:     {}", pred_str);
+        }
+        println!();
+    }
+
+    // Pattern 2: CRF が部分文字列を予測
+    println!("\n✗ パターン2: CRF が部分文字列を予測 ({} 件)", partial_crf.len());
+    println!("{}", "-".repeat(80));
+    for row in partial_crf.iter().take(count) {
+        println!(
+            "Title: {}",
+            row["title"].as_str().unwrap_or("(N/A)")
+        );
+        println!(
+            "  LLM期待値: {}",
+            row["llm_extracted"].as_str().unwrap_or("(N/A)")
+        );
+        println!(
+            "  CRF予測:   {}",
+            row["crf_extracted"].as_str().unwrap_or("(N/A)")
+        );
+        if let Some(pred) = row["pred_labels"].as_array() {
+            let pred_str: String = pred
+                .iter()
+                .take(20)
+                .filter_map(|v| v.as_str())
+                .collect();
+            println!("  ラベル:     {}", pred_str);
+        }
+        println!();
+    }
+
+    // Pattern 3: CRF が異なるスパンを予測
+    println!(
+        "\n✗ パターン3: CRF が異なるスパンを予測 ({} 件)",
+        different.len()
+    );
+    println!("{}", "-".repeat(80));
+    for row in different.iter().take(count) {
+        println!(
+            "Title: {}",
+            row["title"].as_str().unwrap_or("(N/A)")
+        );
+        println!(
+            "  LLM期待値: {}",
+            row["llm_extracted"].as_str().unwrap_or("(N/A)")
+        );
+        println!(
+            "  CRF予測:   {}",
+            row["crf_extracted"].as_str().unwrap_or("(N/A)")
+        );
+        println!();
+    }
+
+    println!("{}", "=".repeat(80));
+    println!("詳細は data/analysis_mismatches.jsonl をご覧ください");
+    println!("分析報告は data/ANALYSIS_REPORT.md をご覧ください");
+}
