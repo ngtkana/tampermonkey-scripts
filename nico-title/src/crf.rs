@@ -147,54 +147,89 @@ impl CrfModel {
         z
     }
 
-    /// Viterbi アルゴリズムで最尤ラベル系列を復号
+    /// Viterbi アルゴリズムで最尤ラベル系列を復号（BIO 制約あり）
+    ///
+    /// BIO 制約:
+    /// - 系列先頭に I は来ない
+    /// - O の直後に I は来ない（I は B か I の後にしか来ない）
     pub fn viterbi(&self, sequence: &[Vec<usize>]) -> Vec<Label> {
         let n = sequence.len();
-        let mut viterbi = vec![[f64::NEG_INFINITY; 3]; n + 1];
-        let mut backpointer = vec![[0usize; 3]; n + 1];
+        if n == 0 {
+            return vec![];
+        }
 
-        // 初期化
-        viterbi[0] = [0.0; 3];
+        // viterbi_dp[t][label] = t 時刻でラベルが label である最尤パスのスコア
+        let mut viterbi_dp = vec![[f64::NEG_INFINITY; 3]; n];
+        // backpointer[t][label] = t 時刻でラベルが label の最尤パスにおける t-1 のラベル
+        let mut backpointer = vec![[0usize; 3]; n];
 
-        // Forward パス
-        for t in 0..n {
+        // t=0: 先頭位置 — BIO 制約で I は禁止、遷移スコアなし
+        for curr_label in [Label::B, Label::O] {
+            let curr_idx = curr_label as usize;
+            let mut s = 0.0;
+            for &feat_id in &sequence[0] {
+                if feat_id < self.feature_weights.len() {
+                    s += self.feature_weights[feat_id][curr_idx];
+                }
+            }
+            viterbi_dp[0][curr_idx] = s;
+        }
+        // Label::I at t=0 は NEG_INFINITY のまま（先頭 I 禁止）
+
+        // t=1..n-1: 通常の Viterbi（BIO 制約: O → I は禁止）
+        for t in 1..n {
             for curr_label in Label::all() {
                 let curr_idx = curr_label as usize;
                 let mut best_score = f64::NEG_INFINITY;
-                let mut best_prev = 0usize;
+                let mut best_prev = Label::O as usize;
 
                 for prev_label in Label::all() {
                     let prev_idx = prev_label as usize;
-                    let score = viterbi[t][prev_idx]
-                        + self.score(&sequence[t], Some(prev_label), curr_label);
 
+                    // BIO 制約: I は B か I の後にしか来ない
+                    if curr_label == Label::I && prev_label == Label::O {
+                        continue;
+                    }
+
+                    let prev_score = viterbi_dp[t - 1][prev_idx];
+                    if prev_score == f64::NEG_INFINITY {
+                        continue;
+                    }
+
+                    let score =
+                        prev_score + self.score(&sequence[t], Some(prev_label), curr_label);
                     if score > best_score {
                         best_score = score;
                         best_prev = prev_idx;
                     }
                 }
 
-                viterbi[t + 1][curr_idx] = best_score;
-                backpointer[t + 1][curr_idx] = best_prev;
+                viterbi_dp[t][curr_idx] = best_score;
+                backpointer[t][curr_idx] = best_prev;
             }
         }
 
-        // Backtrack
+        // Backtrack: 末尾から最尤ラベルを辿る
         let mut path = vec![Label::O; n];
-        let mut curr = 0usize;
+        let mut curr = Label::O as usize;
         for label in Label::all() {
-            if viterbi[n][label as usize] > viterbi[n][curr] {
+            if viterbi_dp[n - 1][label as usize] > viterbi_dp[n - 1][curr] {
                 curr = label as usize;
             }
         }
 
-        for t in (0..n).rev() {
-            path[t] = match curr {
+        path[n - 1] = match curr {
+            0 => Label::B,
+            1 => Label::I,
+            _ => Label::O,
+        };
+        for t in (1..n).rev() {
+            curr = backpointer[t][curr];
+            path[t - 1] = match curr {
                 0 => Label::B,
                 1 => Label::I,
                 _ => Label::O,
             };
-            curr = backpointer[t + 1][curr];
         }
 
         path
@@ -371,10 +406,44 @@ mod tests {
 
     #[test]
     fn test_viterbi_simple() {
-        let mut model = CrfModel::new(HashMap::new(), 0.1, 0.001);
+        let model = CrfModel::new(HashMap::new(), 0.1, 0.001);
         let sequence = vec![vec![], vec![]]; // 2 時刻、特徴量なし
         let path = model.viterbi(&sequence);
         assert_eq!(path.len(), 2);
+    }
+
+    #[test]
+    fn test_viterbi_bio_constraint_no_leading_i() {
+        // I が先頭に来てはいけない
+        let mut model = CrfModel::new(HashMap::new(), 0.1, 0.001);
+        // I→I 遷移を強く正に設定しても先頭 I は禁止される
+        model.transition[Label::I as usize][Label::I as usize] = 10.0;
+
+        let sequence = vec![vec![], vec![], vec![]];
+        let path = model.viterbi(&sequence);
+        assert_ne!(path[0], Label::I, "先頭ラベルは I であってはならない");
+    }
+
+    #[test]
+    fn test_viterbi_bio_constraint_no_o_to_i() {
+        // O の後に I は来てはいけない
+        let mut model = CrfModel::new(HashMap::new(), 0.1, 0.001);
+        // O→I 遷移スコアを強く正に設定しても制約で禁止される
+        model.transition[Label::O as usize][Label::I as usize] = 100.0;
+
+        let sequence = vec![vec![], vec![], vec![], vec![]];
+        let path = model.viterbi(&sequence);
+
+        for i in 1..path.len() {
+            if path[i] == Label::I {
+                assert_ne!(
+                    path[i - 1],
+                    Label::O,
+                    "O の後に I が来てはならない（位置 {}）",
+                    i
+                );
+            }
+        }
     }
 
     #[test]
