@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::io::Write;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,10 +62,10 @@ pub fn download() {
 
                 match serde_json::from_str::<ApiResponse>(&text) {
                     Ok(api_resp) => {
-                        if offset == 0 {
-                            if let Some(count) = api_resp.meta.total_count {
-                                println!("Total count: {}", count);
-                            }
+                        if offset == 0
+                            && let Some(count) = api_resp.meta.total_count
+                        {
+                            println!("Total count: {}", count);
                         }
 
                         let batch_size = api_resp.data.len();
