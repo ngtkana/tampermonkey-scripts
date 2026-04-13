@@ -4,6 +4,7 @@
 
 * **Rust ファースト**: すべての処理は Rust で実装
 * **毎回のコンパイル確認**: `cargo build --release` で型安全性を確認
+* **Don't touch git**: git 操作は人間が行います
 
 ---
 
