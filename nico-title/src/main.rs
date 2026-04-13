@@ -99,6 +99,26 @@ enum Commands {
         #[arg(short, long, default_value = "5")]
         count: usize,
     },
+    /// Find suspicious annotations (likely incorrect LLM extractions)
+    #[command(name = "find-suspicious")]
+    FindSuspicious {
+        /// Input mismatches file (default: data/analysis_mismatches.jsonl)
+        #[arg(short, long, default_value = "data/analysis_mismatches.jsonl")]
+        input: String,
+        /// Output file (default: data/suspicious_annotations.jsonl)
+        #[arg(short, long, default_value = "data/suspicious_annotations.jsonl")]
+        output: String,
+    },
+    /// Check BIO conversion correctness
+    #[command(name = "check-bio-conversion")]
+    CheckBioConversion {
+        /// BIO file (default: data/nico_bio_tags.jsonl)
+        #[arg(short, long, default_value = "data/nico_bio_tags.jsonl")]
+        bio_file: String,
+        /// Mismatches file (default: data/analysis_mismatches.jsonl)
+        #[arg(short, long, default_value = "data/analysis_mismatches.jsonl")]
+        mismatches_file: String,
+    },
 }
 
 fn main() {
@@ -130,6 +150,15 @@ fn main() {
         }) => analyze_results::analyze(&input, &model, &output),
         Some(Commands::ShowMismatches { input, count }) => {
             analyze_results::show_mismatches(&input, count);
+        }
+        Some(Commands::FindSuspicious { input, output }) => {
+            analyze_results::find_suspicious(&input, &output);
+        }
+        Some(Commands::CheckBioConversion {
+            bio_file,
+            mismatches_file,
+        }) => {
+            analyze_results::check_bio_conversion(&bio_file, &mismatches_file);
         }
         None => println!("No command specified. Use --help for usage information."),
     }

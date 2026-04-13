@@ -340,3 +340,196 @@ pub fn show_mismatches(input_file: &str, count: usize) {
     println!("詳細は data/analysis_mismatches.jsonl をご覧ください");
     println!("分析報告は data/ANALYSIS_REPORT.md をご覧ください");
 }
+
+pub fn find_suspicious(input_file: &str, output_file: &str) {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader, Write};
+
+    let file = match File::open(input_file) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open file: {}", e);
+            return;
+        }
+    };
+
+    let reader = BufReader::new(file);
+    let mut output = match File::create(output_file) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to create output file: {}", e);
+            return;
+        }
+    };
+
+    let mut suspicious_count = 0;
+    let mut gold_starts_with_o = 0;  // Gold が O で始まる（曲名が後ろ）
+    let mut both_nonempty_differ = 0; // 両方が非空だが異なる
+
+    println!("\n{}", "=".repeat(80));
+    println!("怪しいAnnotation検出");
+    println!("{}\n", "=".repeat(80));
+
+    let empty_vec = vec![];
+
+    for line in reader.lines().flatten() {
+        if let Ok(row) = serde_json::from_str::<serde_json::Value>(&line) {
+            let gold_tags = row["gold_tags"].as_array().unwrap_or(&empty_vec);
+            let llm_extracted = row["llm_extracted"].as_str().unwrap_or("");
+            let crf_extracted = row["crf_extracted"].as_str().unwrap_or("");
+            let title = row["title"].as_str().unwrap_or("");
+
+            let is_suspicious = if gold_tags.is_empty() {
+                false
+            } else if gold_tags[0].as_str() == Some("O") && !llm_extracted.is_empty() {
+                // Gold が O で始まる（曲名が後ろにある）のに、LLM が何かを抽出している
+                // → LLM が誤った可能性が高い
+                gold_starts_with_o += 1;
+                true
+            } else if !llm_extracted.is_empty()
+                && !crf_extracted.is_empty()
+                && llm_extracted != crf_extracted
+            {
+                // Gold が B で始まるなら、とりあえず LLM は正しい可能性がある
+                // ただし、CRF との差が大きい場合は要確認
+                if gold_tags.is_empty() || gold_tags[0].as_str() != Some("B") {
+                    both_nonempty_differ += 1;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if is_suspicious {
+                suspicious_count += 1;
+
+                let record = serde_json::json!({
+                    "title": title,
+                    "llm_extracted": llm_extracted,
+                    "crf_extracted": crf_extracted,
+                    "gold_tag_start": gold_tags.first().and_then(|v| v.as_str()).unwrap_or("N/A"),
+                    "reason": if gold_tags.first().and_then(|v| v.as_str()) == Some("O") {
+                        "Gold が O で始まる（曲名が後ろ）のに LLM が抽出した"
+                    } else {
+                        "両方が非空だが異なり、Gold が不明確"
+                    }
+                });
+
+                let _ = writeln!(output, "{}", record.to_string());
+            }
+        }
+    }
+
+    println!("怪しいAnnotation: {} 件", suspicious_count);
+    println!("  - Gold が O で始まる（曲名が後ろ）: {} 件", gold_starts_with_o);
+    println!("  - その他（要確認）: {} 件\n", both_nonempty_differ);
+
+    println!("詳細は {} をご覧ください", output_file);
+
+    if suspicious_count > 0 {
+        println!(
+            "\n修正方法:\n\
+             1. {} を開く\n\
+             2. 各ケースを目視確認\n\
+             3. LLM の抽出が間違っていれば、correct な値に修正\n\
+             4. data/nico_api_annotations.jsonl の該当行も修正\n\
+             5. bio-convert を実行して BIO タグを再生成",
+            output_file
+        );
+    }
+}
+
+pub fn check_bio_conversion(bio_file: &str, mismatches_file: &str) {
+    use std::collections::HashMap;
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    // BIO ファイルを読み込んでマップを作成
+    let file = match File::open(bio_file) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open BIO file: {}", e);
+            return;
+        }
+    };
+
+    let reader = BufReader::new(file);
+    let mut bio_data: HashMap<String, String> = HashMap::new();
+
+    for line in reader.lines().flatten() {
+        if let Ok(row) = serde_json::from_str::<serde_json::Value>(&line) {
+            if let Some(title) = row["title"].as_str() {
+                if let Some(extracted) = row["extracted_title"].as_str() {
+                    bio_data.insert(title.to_string(), extracted.to_string());
+                }
+            }
+        }
+    }
+
+    // Mismatches ファイルを読み込んで検証
+    let file = match File::open(mismatches_file) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open mismatches file: {}", e);
+            return;
+        }
+    };
+
+    let reader = BufReader::new(file);
+    let mut bio_missing = 0;     // BIO ファイルに見つからない
+    let mut bio_mismatch = 0;    // BIO ファイルの extracted が LLM と異なる
+    let mut bio_correct = 0;     // BIO ファイルの extracted が LLM と同じ
+
+    println!("\n{}", "=".repeat(80));
+    println!("BIO 変換の正確性チェック");
+    println!("{}\n", "=".repeat(80));
+
+    for line in reader.lines().flatten() {
+        if let Ok(row) = serde_json::from_str::<serde_json::Value>(&line) {
+            if let Some(title) = row["title"].as_str() {
+                if let Some(llm_extracted) = row["llm_extracted"].as_str() {
+                    if let Some(bio_extracted) = bio_data.get(title) {
+                        if bio_extracted == llm_extracted {
+                            bio_correct += 1;
+                        } else {
+                            bio_mismatch += 1;
+                            // Debug output
+                            if bio_mismatch <= 3 {
+                                eprintln!("BIO mismatch:");
+                                eprintln!("  Title: {}", title);
+                                eprintln!("  LLM:   {}", llm_extracted);
+                                eprintln!("  BIO:   {}\n", bio_extracted);
+                            }
+                        }
+                    } else {
+                        bio_missing += 1;
+                        if bio_missing <= 3 {
+                            eprintln!("BIO missing:");
+                            eprintln!("  Title: {}", title);
+                            eprintln!("  LLM:   {}\n", llm_extracted);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    println!("結果:");
+    println!("  BIO ファイルの extracted が LLM と一致: {} 件", bio_correct);
+    println!("  BIO ファイルの extracted が LLM と不一致: {} 件", bio_mismatch);
+    println!("  BIO ファイルに見つからない: {} 件\n", bio_missing);
+
+    if bio_mismatch == 0 && bio_missing == 0 {
+        println!("✓ BIO 変換は正常です！");
+        println!("  つまり、問題は **BIO 変換ではなく、LLM annotation または CRF モデル**にあります。");
+    } else {
+        println!("✗ BIO 変換にバグがある可能性があります。");
+        println!("  確認してください：");
+        println!("  1. HTML エンティティの処理（&amp; → &）");
+        println!("  2. Unicode 正規化（NFKC）");
+        println!("  3. 部分文字列マッチの順序（複数マッチの場合）");
+    }
+}
+
