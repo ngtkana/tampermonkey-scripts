@@ -1,12 +1,12 @@
-mod download;
 mod analyze;
-mod extract;
-mod annotate;
-mod compare;
-mod bio;
-mod features;
-mod crf;
 mod analyze_results;
+mod annotate;
+mod bio;
+mod compare;
+mod crf;
+mod download;
+mod extract;
+mod features;
 
 use clap::{Parser, Subcommand};
 
@@ -205,7 +205,7 @@ fn extract_all_titles() {
                         "extracted_title": extracted
                     });
 
-                    if let Err(e) = writeln!(output_file, "{}", json_output.to_string()) {
+                    if let Err(e) = writeln!(output_file, "{}", json_output) {
                         eprintln!("Failed to write line: {}", e);
                         return;
                     }
@@ -218,7 +218,10 @@ fn extract_all_titles() {
         }
     }
 
-    println!("Successfully extracted {} titles to data/nico_api_extracted.jsonl", count);
+    println!(
+        "Successfully extracted {} titles to data/nico_api_extracted.jsonl",
+        count
+    );
 }
 
 fn evaluate_crf(input_file: &str, model_file: &str, test_ratio: f64) {
@@ -281,7 +284,8 @@ fn evaluate_crf(input_file: &str, model_file: &str, test_ratio: f64) {
     let model: crf::CrfModel = match File::open(model_file) {
         Ok(mut f) => {
             let mut content = String::new();
-            f.read_to_string(&mut content).expect("Failed to read model");
+            f.read_to_string(&mut content)
+                .expect("Failed to read model");
             serde_json::from_str(&content).expect("Failed to parse model JSON")
         }
         Err(e) => {
@@ -293,9 +297,9 @@ fn evaluate_crf(input_file: &str, model_file: &str, test_ratio: f64) {
     println!("Model loaded from {}\n", model_file);
 
     // 評価指標
-    let mut tp = 0;  // B タグが正解
-    let mut fp = 0;  // B タグを予測したが不正解
-    let mut fn_count = 0;  // B タグを逃した
+    let mut tp = 0; // B タグが正解
+    let mut fp = 0; // B タグを予測したが不正解
+    let mut fn_count = 0; // B タグを逃した
 
     for (sequence, gold_labels, _title) in test_docs {
         let pred_labels = model.viterbi(sequence);
@@ -316,9 +320,21 @@ fn evaluate_crf(input_file: &str, model_file: &str, test_ratio: f64) {
     }
 
     // F1 計算
-    let precision = if tp + fp == 0 { 0.0 } else { tp as f64 / (tp + fp) as f64 };
-    let recall = if tp + fn_count == 0 { 0.0 } else { tp as f64 / (tp + fn_count) as f64 };
-    let f1 = if precision + recall == 0.0 { 0.0 } else { 2.0 * precision * recall / (precision + recall) };
+    let precision = if tp + fp == 0 {
+        0.0
+    } else {
+        tp as f64 / (tp + fp) as f64
+    };
+    let recall = if tp + fn_count == 0 {
+        0.0
+    } else {
+        tp as f64 / (tp + fn_count) as f64
+    };
+    let f1 = if precision + recall == 0.0 {
+        0.0
+    } else {
+        2.0 * precision * recall / (precision + recall)
+    };
 
     println!("=== CRF 評価結果 ===");
     println!("テスト件数: {}", test_docs.len());
@@ -343,13 +359,7 @@ fn evaluate_crf(input_file: &str, model_file: &str, test_ratio: f64) {
     }
 }
 
-fn train_crf(
-    input_file: &str,
-    output_file: &str,
-    learning_rate: f64,
-    lambda: f64,
-    epochs: usize,
-) {
+fn train_crf(input_file: &str, output_file: &str, learning_rate: f64, lambda: f64, epochs: usize) {
     use std::fs::File;
     use std::io::{BufRead, BufReader, Write};
 
@@ -404,7 +414,8 @@ fn train_crf(
     println!("Feature map size: {}", feature_extractor.feature_map.len());
 
     // CRF モデルを作成・学習
-    let mut model = crf::CrfModel::new(feature_extractor.feature_map.clone(), learning_rate, lambda);
+    let mut model =
+        crf::CrfModel::new(feature_extractor.feature_map.clone(), learning_rate, lambda);
 
     println!("Training CRF for {} epochs...", epochs);
     let batch_size = 32;

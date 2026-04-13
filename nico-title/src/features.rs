@@ -3,16 +3,15 @@ use std::collections::HashMap;
 /// 文字の種類を分類
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CharType {
-    Kanji,         // 漢字
-    Hiragana,      // ひらがな
-    Katakana,      // カタカナ
-    AsciiLetter,   // A-Z, a-z
-    AsciiDigit,    // 0-9
-    AsciiSymbol,   // ! @ # ...
-    FullwidthKana, // ＡＢＣ等（全角英数字）
+    Kanji,           // 漢字
+    Hiragana,        // ひらがな
+    Katakana,        // カタカナ
+    AsciiLetter,     // A-Z, a-z
+    AsciiDigit,      // 0-9
+    AsciiSymbol,     // ! @ # ...
     FullwidthSymbol, // 【】（）など
-    Space,         // 空白
-    Other,         // その他
+    Space,           // 空白
+    Other,           // その他
 }
 
 impl CharType {
@@ -46,7 +45,7 @@ impl CharType {
             '\u{FF10}'..='\u{FF19}' | // １-９
             '\u{FF1A}'..='\u{FF20}' | // ：；＜＝＞？＠
             '\u{FF3B}'..='\u{FF40}' | // ［＼］＾＿｀
-            '\u{FF5B}'..='\u{FF65}' => CharType::FullwidthKana,
+            '\u{FF5B}'..='\u{FF65}' => CharType::FullwidthSymbol,
 
             // スペース
             ' ' | '\t' => CharType::Space,
@@ -63,7 +62,6 @@ impl CharType {
             CharType::AsciiLetter => "ascii_letter",
             CharType::AsciiDigit => "ascii_digit",
             CharType::AsciiSymbol => "ascii_symbol",
-            CharType::FullwidthKana => "fullwidth_kana",
             CharType::FullwidthSymbol => "fullwidth_symbol",
             CharType::Space => "space",
             CharType::Other => "other",
@@ -128,7 +126,11 @@ impl FeatureExtractor {
                 let sep_char_idx = title[..pos].chars().count();
                 let distance = (idx as isize - sep_char_idx as isize).abs();
                 if distance <= 5 {
-                    features.push(self.get_feature_id(format!("sep_dist:{}:{}",sep.replace(".", "_"), distance)));
+                    features.push(self.get_feature_id(format!(
+                        "sep_dist:{}:{}",
+                        sep.replace(".", "_"),
+                        distance
+                    )));
                 }
             }
         }
@@ -138,7 +140,7 @@ impl FeatureExtractor {
         if idx < 3 {
             features.push(self.get_feature_id("pos:start".to_string()));
         }
-        if idx >= title_len - 3 {
+        if idx + 3 >= title_len {
             features.push(self.get_feature_id("pos:end".to_string()));
         }
         if idx == title_len / 2 {

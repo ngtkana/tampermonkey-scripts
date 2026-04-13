@@ -315,33 +315,21 @@ impl CrfModel {
         }
 
         // 勾配を平均化
-        for feat_id in 0..self.feature_weights.len() {
-            for label in 0..3 {
-                total_grad_features[feat_id][label] /= batch_size;
-            }
+        for x in total_grad_features.iter_mut().flatten() {
+            *x /= batch_size;
         }
-
-        for from_label in 0..3 {
-            for to_label in 0..3 {
-                total_grad_transition[from_label][to_label] /= batch_size;
-            }
+        for x in total_grad_transition.iter_mut().flatten() {
+            *x /= batch_size;
         }
 
         // 勾配 clipping（最大ノルム = 5.0）
         let max_grad_norm = 5.0;
-        let mut norm_sq = 0.0;
-        for feat_id in 0..self.feature_weights.len() {
-            for label in 0..3 {
-                norm_sq +=
-                    total_grad_features[feat_id][label] * total_grad_features[feat_id][label];
-            }
-        }
-        for from_label in 0..3 {
-            for to_label in 0..3 {
-                norm_sq += total_grad_transition[from_label][to_label]
-                    * total_grad_transition[from_label][to_label];
-            }
-        }
+        let norm_sq = total_grad_features
+            .iter()
+            .flatten()
+            .map(|&x| x * x)
+            .chain(total_grad_transition.iter().flatten().map(|&x| x * x))
+            .sum::<f64>();
 
         let grad_norm = norm_sq.sqrt();
         let clip_factor = if grad_norm > max_grad_norm {
@@ -358,12 +346,13 @@ impl CrfModel {
             }
         }
 
-        for from_label in 0..3 {
-            for to_label in 0..3 {
-                let grad = total_grad_transition[from_label][to_label] * clip_factor;
-                self.transition[from_label][to_label] -= self.learning_rate
-                    * (grad + self.lambda * self.transition[from_label][to_label]);
-            }
+        for (total_grad_transition, self_transition) in total_grad_transition
+            .iter()
+            .flatten()
+            .zip(self.transition.iter_mut().flatten())
+        {
+            let grad = total_grad_transition * clip_factor;
+            *self_transition -= self.learning_rate * (grad + self.lambda * *self_transition);
         }
     }
 }

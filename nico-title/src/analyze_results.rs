@@ -45,7 +45,8 @@ pub fn analyze(input_file: &str, model_file: &str, output_file: &str) {
     let model: crf::CrfModel = match File::open(model_file) {
         Ok(mut f) => {
             let mut content = String::new();
-            f.read_to_string(&mut content).expect("Failed to read model");
+            f.read_to_string(&mut content)
+                .expect("Failed to read model");
             serde_json::from_str(&content).expect("Failed to parse model JSON")
         }
         Err(e) => {
@@ -164,10 +165,24 @@ pub fn analyze(input_file: &str, model_file: &str, output_file: &str) {
 
     println!("=== 分析結果 ===");
     println!("総件数: {}", total);
-    println!("LLM と CRF が一致: {} ({}%)", total - mismatches,
-        if total > 0 { ((total - mismatches) as f64 / total as f64 * 100.0) as u32 } else { 0 });
-    println!("LLM と CRF が不一致: {} ({}%)\n", mismatches,
-        if total > 0 { (mismatches as f64 / total as f64 * 100.0) as u32 } else { 0 });
+    println!(
+        "LLM と CRF が一致: {} ({}%)",
+        total - mismatches,
+        if total > 0 {
+            ((total - mismatches) as f64 / total as f64 * 100.0) as u32
+        } else {
+            0
+        }
+    );
+    println!(
+        "LLM と CRF が不一致: {} ({}%)\n",
+        mismatches,
+        if total > 0 {
+            (mismatches as f64 / total as f64 * 100.0) as u32
+        } else {
+            0
+        }
+    );
 
     println!("分析結果を {} に出力しました", output_file);
 
@@ -181,7 +196,7 @@ pub fn analyze(input_file: &str, model_file: &str, output_file: &str) {
         let reader = BufReader::new(file);
         let mut feature_extractor = features::FeatureExtractor::new();
 
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             if let Ok(doc) = serde_json::from_str::<bio::BioDocument>(&line) {
                 let chars: Vec<char> = doc.title.chars().collect();
                 let mut sequences = Vec::new();
@@ -215,7 +230,7 @@ pub fn analyze(input_file: &str, model_file: &str, output_file: &str) {
                         }).collect::<Vec<_>>(),
                     });
 
-                    let _ = writeln!(mismatch_file, "{}", mismatch.to_string());
+                    let _ = writeln!(mismatch_file, "{}", mismatch);
                 }
             }
         }
@@ -242,7 +257,7 @@ pub fn show_mismatches(input_file: &str, count: usize) {
     let mut different = Vec::new();
 
     // Parse JSON and categorize
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         if let Ok(row) = serde_json::from_str::<serde_json::Value>(&line) {
             let crf_extracted = row["crf_extracted"].as_str().unwrap_or("");
             let llm_extracted = row["llm_extracted"].as_str().unwrap_or("");
@@ -267,34 +282,27 @@ pub fn show_mismatches(input_file: &str, count: usize) {
     println!("✗ パターン1: CRF が空を予測 ({} 件)", empty_crf.len());
     println!("{}", "-".repeat(80));
     for row in empty_crf.iter().take(count) {
-        println!(
-            "Title: {}",
-            row["title"].as_str().unwrap_or("(N/A)")
-        );
+        println!("Title: {}", row["title"].as_str().unwrap_or("(N/A)"));
         println!(
             "  LLM期待値: {}",
             row["llm_extracted"].as_str().unwrap_or("(N/A)")
         );
         println!("  CRF予測:   （空）");
         if let Some(pred) = row["pred_labels"].as_array() {
-            let pred_str: String = pred
-                .iter()
-                .take(20)
-                .filter_map(|v| v.as_str())
-                .collect();
+            let pred_str: String = pred.iter().take(20).filter_map(|v| v.as_str()).collect();
             println!("  ラベル:     {}", pred_str);
         }
         println!();
     }
 
     // Pattern 2: CRF が部分文字列を予測
-    println!("\n✗ パターン2: CRF が部分文字列を予測 ({} 件)", partial_crf.len());
+    println!(
+        "\n✗ パターン2: CRF が部分文字列を予測 ({} 件)",
+        partial_crf.len()
+    );
     println!("{}", "-".repeat(80));
     for row in partial_crf.iter().take(count) {
-        println!(
-            "Title: {}",
-            row["title"].as_str().unwrap_or("(N/A)")
-        );
+        println!("Title: {}", row["title"].as_str().unwrap_or("(N/A)"));
         println!(
             "  LLM期待値: {}",
             row["llm_extracted"].as_str().unwrap_or("(N/A)")
@@ -304,11 +312,7 @@ pub fn show_mismatches(input_file: &str, count: usize) {
             row["crf_extracted"].as_str().unwrap_or("(N/A)")
         );
         if let Some(pred) = row["pred_labels"].as_array() {
-            let pred_str: String = pred
-                .iter()
-                .take(20)
-                .filter_map(|v| v.as_str())
-                .collect();
+            let pred_str: String = pred.iter().take(20).filter_map(|v| v.as_str()).collect();
             println!("  ラベル:     {}", pred_str);
         }
         println!();
@@ -321,10 +325,7 @@ pub fn show_mismatches(input_file: &str, count: usize) {
     );
     println!("{}", "-".repeat(80));
     for row in different.iter().take(count) {
-        println!(
-            "Title: {}",
-            row["title"].as_str().unwrap_or("(N/A)")
-        );
+        println!("Title: {}", row["title"].as_str().unwrap_or("(N/A)"));
         println!(
             "  LLM期待値: {}",
             row["llm_extracted"].as_str().unwrap_or("(N/A)")
@@ -363,7 +364,7 @@ pub fn find_suspicious(input_file: &str, output_file: &str) {
     };
 
     let mut suspicious_count = 0;
-    let mut gold_starts_with_o = 0;  // Gold が O で始まる（曲名が後ろ）
+    let mut gold_starts_with_o = 0; // Gold が O で始まる（曲名が後ろ）
     let mut both_nonempty_differ = 0; // 両方が非空だが異なる
 
     println!("\n{}", "=".repeat(80));
@@ -372,7 +373,7 @@ pub fn find_suspicious(input_file: &str, output_file: &str) {
 
     let empty_vec = vec![];
 
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         if let Ok(row) = serde_json::from_str::<serde_json::Value>(&line) {
             let gold_tags = row["gold_tags"].as_array().unwrap_or(&empty_vec);
             let llm_extracted = row["llm_extracted"].as_str().unwrap_or("");
@@ -417,13 +418,16 @@ pub fn find_suspicious(input_file: &str, output_file: &str) {
                     }
                 });
 
-                let _ = writeln!(output, "{}", record.to_string());
+                let _ = writeln!(output, "{}", record);
             }
         }
     }
 
     println!("怪しいAnnotation: {} 件", suspicious_count);
-    println!("  - Gold が O で始まる（曲名が後ろ）: {} 件", gold_starts_with_o);
+    println!(
+        "  - Gold が O で始まる（曲名が後ろ）: {} 件",
+        gold_starts_with_o
+    );
     println!("  - その他（要確認）: {} 件\n", both_nonempty_differ);
 
     println!("詳細は {} をご覧ください", output_file);
@@ -458,13 +462,12 @@ pub fn check_bio_conversion(bio_file: &str, mismatches_file: &str) {
     let reader = BufReader::new(file);
     let mut bio_data: HashMap<String, String> = HashMap::new();
 
-    for line in reader.lines().flatten() {
-        if let Ok(row) = serde_json::from_str::<serde_json::Value>(&line) {
-            if let Some(title) = row["title"].as_str() {
-                if let Some(extracted) = row["extracted_title"].as_str() {
-                    bio_data.insert(title.to_string(), extracted.to_string());
-                }
-            }
+    for line in reader.lines().map_while(Result::ok) {
+        if let Ok(row) = serde_json::from_str::<serde_json::Value>(&line)
+            && let Some(title) = row["title"].as_str()
+            && let Some(extracted) = row["extracted_title"].as_str()
+        {
+            bio_data.insert(title.to_string(), extracted.to_string());
         }
     }
 
@@ -478,52 +481,59 @@ pub fn check_bio_conversion(bio_file: &str, mismatches_file: &str) {
     };
 
     let reader = BufReader::new(file);
-    let mut bio_missing = 0;     // BIO ファイルに見つからない
-    let mut bio_mismatch = 0;    // BIO ファイルの extracted が LLM と異なる
-    let mut bio_correct = 0;     // BIO ファイルの extracted が LLM と同じ
+    let mut bio_missing = 0; // BIO ファイルに見つからない
+    let mut bio_mismatch = 0; // BIO ファイルの extracted が LLM と異なる
+    let mut bio_correct = 0; // BIO ファイルの extracted が LLM と同じ
 
     println!("\n{}", "=".repeat(80));
     println!("BIO 変換の正確性チェック");
     println!("{}\n", "=".repeat(80));
 
-    for line in reader.lines().flatten() {
-        if let Ok(row) = serde_json::from_str::<serde_json::Value>(&line) {
-            if let Some(title) = row["title"].as_str() {
-                if let Some(llm_extracted) = row["llm_extracted"].as_str() {
-                    if let Some(bio_extracted) = bio_data.get(title) {
-                        if bio_extracted == llm_extracted {
-                            bio_correct += 1;
-                        } else {
-                            bio_mismatch += 1;
-                            // Debug output
-                            if bio_mismatch <= 3 {
-                                eprintln!("BIO mismatch:");
-                                eprintln!("  Title: {}", title);
-                                eprintln!("  LLM:   {}", llm_extracted);
-                                eprintln!("  BIO:   {}\n", bio_extracted);
-                            }
-                        }
-                    } else {
-                        bio_missing += 1;
-                        if bio_missing <= 3 {
-                            eprintln!("BIO missing:");
-                            eprintln!("  Title: {}", title);
-                            eprintln!("  LLM:   {}\n", llm_extracted);
-                        }
+    for line in reader.lines().map_while(Result::ok) {
+        if let Ok(row) = serde_json::from_str::<serde_json::Value>(&line)
+            && let Some(title) = row["title"].as_str()
+            && let Some(llm_extracted) = row["llm_extracted"].as_str()
+        {
+            if let Some(bio_extracted) = bio_data.get(title) {
+                if bio_extracted == llm_extracted {
+                    bio_correct += 1;
+                } else {
+                    bio_mismatch += 1;
+                    // Debug output
+                    if bio_mismatch <= 3 {
+                        eprintln!("BIO mismatch:");
+                        eprintln!("  Title: {}", title);
+                        eprintln!("  LLM:   {}", llm_extracted);
+                        eprintln!("  BIO:   {}\n", bio_extracted);
                     }
+                }
+            } else {
+                bio_missing += 1;
+                if bio_missing <= 3 {
+                    eprintln!("BIO missing:");
+                    eprintln!("  Title: {}", title);
+                    eprintln!("  LLM:   {}\n", llm_extracted);
                 }
             }
         }
     }
 
     println!("結果:");
-    println!("  BIO ファイルの extracted が LLM と一致: {} 件", bio_correct);
-    println!("  BIO ファイルの extracted が LLM と不一致: {} 件", bio_mismatch);
+    println!(
+        "  BIO ファイルの extracted が LLM と一致: {} 件",
+        bio_correct
+    );
+    println!(
+        "  BIO ファイルの extracted が LLM と不一致: {} 件",
+        bio_mismatch
+    );
     println!("  BIO ファイルに見つからない: {} 件\n", bio_missing);
 
     if bio_mismatch == 0 && bio_missing == 0 {
         println!("✓ BIO 変換は正常です！");
-        println!("  つまり、問題は **BIO 変換ではなく、LLM annotation または CRF モデル**にあります。");
+        println!(
+            "  つまり、問題は **BIO 変換ではなく、LLM annotation または CRF モデル**にあります。"
+        );
     } else {
         println!("✗ BIO 変換にバグがある可能性があります。");
         println!("  確認してください：");
@@ -532,4 +542,3 @@ pub fn check_bio_conversion(bio_file: &str, mismatches_file: &str) {
         println!("  3. 部分文字列マッチの順序（複数マッチの場合）");
     }
 }
-
