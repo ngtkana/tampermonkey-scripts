@@ -52,9 +52,8 @@ pub fn extract_song_title(full_title: &str) -> String {
     // 例: 傀儡的フォルティシモ　feat.初音ミク → 傀儡的フォルティシモ
     // 例: 稲葉曇「ラグトレイン」Vo. 歌愛ユキ は Rule 0 で処理済みだが念のため
     for sep in &[
-        " feat. ", " feat.", "(feat.", "　feat.", " feat ",
-        " ft. ", " ft.", " ft ",
-        " Vo. ", "　Vo.", " vo. ", " vo.",
+        " feat. ", " feat.", "(feat.", "　feat.", " feat ", " ft. ", " ft.", " ft ", " Vo. ",
+        "　Vo.", " vo. ", " vo.",
     ] {
         if let Some(pos) = title.find(sep) {
             title = title[..pos].trim().to_string();
@@ -70,12 +69,13 @@ pub fn extract_song_title(full_title: &str) -> String {
 fn extract_from_quotes(s: &str) -> Option<String> {
     for (open, close) in [('「', '」'), ('『', '』')] {
         let open_len = open.len_utf8();
-        if let (Some(start), Some(end)) = (s.find(open), s.rfind(close)) {
-            if start < end && start > 0 {
-                let content = s[start + open_len..end].trim().to_string();
-                if !content.is_empty() {
-                    return Some(content);
-                }
+        if let (Some(start), Some(end)) = (s.find(open), s.rfind(close))
+            && start < end
+            && start > 0
+        {
+            let content = s[start + open_len..end].trim().to_string();
+            if !content.is_empty() {
+                return Some(content);
             }
         }
     }
@@ -110,7 +110,10 @@ mod tests {
     #[test]
     fn test_bracket_prefix() {
         // 【ボカロ名】曲名
-        assert_eq!(extract_song_title("【初音ミク】ごめんなさい 【オリジナル曲】"), "ごめんなさい");
+        assert_eq!(
+            extract_song_title("【初音ミク】ごめんなさい 【オリジナル曲】"),
+            "ごめんなさい"
+        );
     }
 
     #[test]
@@ -135,13 +138,19 @@ mod tests {
     #[test]
     fn test_slash_fullwidth() {
         // 全角スラッシュ
-        assert_eq!(extract_song_title("怠惰でありたい／初音ミク"), "怠惰でありたい");
+        assert_eq!(
+            extract_song_title("怠惰でありたい／初音ミク"),
+            "怠惰でありたい"
+        );
     }
 
     #[test]
     fn test_slash_feat_combo() {
         // 曲名 / クリエイター feat. ボカロ
-        assert_eq!(extract_song_title("アフターブーケ / 何番サンダー feat. 夏色花梨"), "アフターブーケ");
+        assert_eq!(
+            extract_song_title("アフターブーケ / 何番サンダー feat. 夏色花梨"),
+            "アフターブーケ"
+        );
     }
 
     // --- クリエイター名先頭パターン（「」/『』）---
@@ -149,19 +158,28 @@ mod tests {
     #[test]
     fn test_creator_japanese_quotes() {
         // utage「曲名」- ボカロ
-        assert_eq!(extract_song_title("utage「mirroring」- 初音ミク"), "mirroring");
+        assert_eq!(
+            extract_song_title("utage「mirroring」- 初音ミク"),
+            "mirroring"
+        );
     }
 
     #[test]
     fn test_creator_japanese_double_quotes() {
         // クリエイター『曲名』Vo. ボカロ
-        assert_eq!(extract_song_title("稲葉曇『ラグトレイン』Vo. 歌愛ユキ"), "ラグトレイン");
+        assert_eq!(
+            extract_song_title("稲葉曇『ラグトレイン』Vo. 歌愛ユキ"),
+            "ラグトレイン"
+        );
     }
 
     #[test]
     fn test_creator_quotes_feat() {
         // クリエイター「曲名」feat. ボカロ
-        assert_eq!(extract_song_title("Chinozo「グッバイ宣言」feat. flower"), "グッバイ宣言");
+        assert_eq!(
+            extract_song_title("Chinozo「グッバイ宣言」feat. flower"),
+            "グッバイ宣言"
+        );
     }
 
     // --- アンダースコア ---
@@ -176,7 +194,10 @@ mod tests {
     #[test]
     fn test_feat_no_slash() {
         // スラッシュなしの feat パターン
-        assert_eq!(extract_song_title("傀儡的フォルティシモ　feat.初音ミク"), "傀儡的フォルティシモ");
+        assert_eq!(
+            extract_song_title("傀儡的フォルティシモ　feat.初音ミク"),
+            "傀儡的フォルティシモ"
+        );
     }
 
     #[test]
