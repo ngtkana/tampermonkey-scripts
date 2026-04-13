@@ -21,8 +21,13 @@ cargo run -- bio-convert             # BIO タグを生成
 
 ```bash
 cargo run -- crf-learn --learning-rate 0.008 --lambda 0.03 --epochs 20
-cargo run -- crf-eval --test-ratio 0.2     # F1: 78.9%（ルールベース比 +0.8pt）
+cargo run -- crf-eval --test-ratio 0.2     # F1: 80.3% (Precision 82.3%, Recall 78.3%)
 ```
+
+最適パラメータ: `lr=0.008`, `lambda=0.03`, `epochs=20`
+- F1 スコア: **80.3%**（ルールベース 78.1% 比 +2.3pt）
+- Precision: 82.3%, Recall: 78.3%
+- BIO 制約により無効シーケンスを排除
 
 ### 分析
 
