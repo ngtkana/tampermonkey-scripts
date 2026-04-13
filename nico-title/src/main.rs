@@ -6,6 +6,7 @@ mod compare;
 mod bio;
 mod features;
 mod crf;
+mod analyze_results;
 
 use clap::{Parser, Subcommand};
 
@@ -75,6 +76,29 @@ enum Commands {
         #[arg(long, default_value = "0.2")]
         test_ratio: f64,
     },
+    /// Analyze CRF predictions vs LLM annotations
+    #[command(name = "analyze-results")]
+    AnalyzeResults {
+        /// Input BIO tags file (default: data/nico_bio_tags.jsonl)
+        #[arg(short, long, default_value = "data/nico_bio_tags.jsonl")]
+        input: String,
+        /// Model file (default: data/crf_model.json)
+        #[arg(short, long, default_value = "data/crf_model.json")]
+        model: String,
+        /// Output analysis file (default: data/analysis_results.jsonl)
+        #[arg(short, long, default_value = "data/analysis_results.jsonl")]
+        output: String,
+    },
+    /// Show mismatch examples
+    #[command(name = "show-mismatches")]
+    ShowMismatches {
+        /// Input mismatch file (default: data/analysis_mismatches.jsonl)
+        #[arg(short, long, default_value = "data/analysis_mismatches.jsonl")]
+        input: String,
+        /// Number of examples per category (default: 5)
+        #[arg(short, long, default_value = "5")]
+        count: usize,
+    },
 }
 
 fn main() {
@@ -99,6 +123,14 @@ fn main() {
             model: model_file,
             test_ratio,
         }) => evaluate_crf(&input, &model_file, test_ratio),
+        Some(Commands::AnalyzeResults {
+            input,
+            model,
+            output,
+        }) => analyze_results::analyze(&input, &model, &output),
+        Some(Commands::ShowMismatches { input, count }) => {
+            analyze_results::show_mismatches(&input, count);
+        }
         None => println!("No command specified. Use --help for usage information."),
     }
 }
