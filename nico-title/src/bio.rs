@@ -32,8 +32,12 @@ fn convert_to_bio(title: &str, extracted_title: &str) -> Option<BioDocument> {
         let tokens: Vec<BioToken> = title
             .chars()
             .enumerate()
-            .map(|(i, ch)| {
-                let tag = if i == 0 { "B".to_string() } else { "I".to_string() };
+            .map(|(i, ch): (usize, char)| {
+                let tag = if i == 0 {
+                    "B".to_string()
+                } else {
+                    "I".to_string()
+                };
                 BioToken {
                     char: ch.to_string(),
                     tag,
@@ -49,7 +53,6 @@ fn convert_to_bio(title: &str, extracted_title: &str) -> Option<BioDocument> {
     }
 
     // 部分文字列マッチの場合
-    // 文字単位での検索を行う
     let title_chars: Vec<char> = title.chars().collect();
     let extracted_chars: Vec<char> = extracted_title.chars().collect();
 
@@ -67,7 +70,7 @@ fn convert_to_bio(title: &str, extracted_title: &str) -> Option<BioDocument> {
         let tokens: Vec<BioToken> = title_chars
             .iter()
             .enumerate()
-            .map(|(char_idx, ch)| {
+            .map(|(char_idx, ch): (usize, &char)| {
                 let tag = if char_idx >= start_idx && char_idx < end_idx {
                     if char_idx == start_idx { "B" } else { "I" }
                 } else {
@@ -123,21 +126,19 @@ pub fn convert_bio(input_file: &str, output_file: &str) {
         };
 
         match serde_json::from_str::<AnnotationRow>(&line) {
-            Ok(row) => {
-                match convert_to_bio(&row.title, &row.extracted_title) {
-                    Some(doc) => {
-                        if let Err(e) = writeln!(output, "{}", serde_json::to_string(&doc).unwrap()) {
-                            eprintln!("Failed to write line: {}", e);
-                        } else {
-                            converted += 1;
-                        }
-                    }
-                    None => {
-                        failed += 1;
-                        exceptions.push((row.title.clone(), row.extracted_title.clone()));
+            Ok(row) => match convert_to_bio(&row.title, &row.extracted_title) {
+                Some(doc) => {
+                    if let Err(e) = writeln!(output, "{}", serde_json::to_string(&doc).unwrap()) {
+                        eprintln!("Failed to write line: {}", e);
+                    } else {
+                        converted += 1;
                     }
                 }
-            }
+                None => {
+                    failed += 1;
+                    exceptions.push((row.title.clone(), row.extracted_title.clone()));
+                }
+            },
             Err(e) => {
                 eprintln!("JSON parse error at line {}: {}", line_num + 1, e);
             }
